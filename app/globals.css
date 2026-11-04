@@ -270,3 +270,19 @@ tr:last-child td { border-bottom: none; }
   font-size: 11.5px; line-height: 1.5; overflow-x: auto; max-height: 220px;
 }
 .muted { color: var(--muted); font-size: 13px; }
+
+/* ---------- 历史会话 ---------- */
+.history-panel { width: min(620px, 100%); }
+.history-list { display: flex; flex-direction: column; gap: 8px; }
+.history-item {
+  text-align: left; width: 100%; cursor: pointer;
+  border: 1px solid var(--line); background: #fff; border-radius: 12px;
+  padding: 10px 12px; transition: all .15s ease; font-family: inherit;
+}
+.history-item:hover { border-color: #93c5fd; background: var(--brand-soft); }
+.history-title {
+  font-size: 13.5px; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 4px;
+}
+.history-meta { display: flex; gap: 10px; font-size: 11.5px; color: var(--muted); align-items: center; }
+.history-meta .tag { margin: 0; font-size: 10.5px; }

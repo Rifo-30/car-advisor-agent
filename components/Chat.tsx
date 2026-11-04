@@ -59,6 +59,10 @@ export default function Chat() {
   const [traceOpen, setTraceOpen] = useState(false);
   const [traceData, setTraceData] = useState<any>(null);
   const [traceLoading, setTraceLoading] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyList, setHistoryList] = useState<Array<{ id: string; title: string; stage: string; messageCount: number; updatedAt: string | null }>>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -244,6 +248,44 @@ export default function Chat() {
     setNotice("");
   }
 
+  async function openHistory() {
+    setHistoryOpen(true);
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      const r = await fetch("/api/sessions?limit=50");
+      const data = await r.json();
+      setHistoryList(data.sessions ?? []);
+      if (data.note) setHistoryError(data.note);
+    } catch (e) {
+      setHistoryError((e as Error).message);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function loadSession(id: string) {
+    try {
+      const r = await fetch(`/api/session/${id}`);
+      if (!r.ok) return;
+      const data = await r.json();
+      const msgs = (data.session?.messages ?? []).map((m: any) => ({
+        id: uid(),
+        role: (m.role === "user" ? "user" : "assistant") as "user" | "assistant",
+        text: m.content ?? "",
+      }));
+      setSessionId(id);
+      localStorage.setItem("car-advisor-session", id);
+      setMessages(msgs);
+      setInterrupt(null);
+      setQuickReplies([]);
+      setTraceId("");
+      setError("");
+      setNotice("");
+      setHistoryOpen(false);
+    } catch { /* ignore */ }
+  }
+
   async function openTrace() {
     if (!traceId) return;
     setTraceOpen(true);
@@ -283,6 +325,9 @@ export default function Chat() {
               {health.langfuse?.configured && <span className="badge">Langfuse</span>}
             </>
           )}
+          <button className="badge trace-btn" onClick={openHistory}>
+            历史会话
+          </button>
           <button className="badge trace-btn" onClick={newSession}>
             新对话
           </button>
@@ -483,6 +528,39 @@ export default function Chat() {
         )}
       </div>
 
+      {historyOpen && (
+        <div className="modal" onClick={() => setHistoryOpen(false)}>
+          <div className="modal-panel history-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3>历史会话</h3>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={openHistory}>刷新</button>
+                <button onClick={() => setHistoryOpen(false)}>关闭</button>
+              </div>
+            </div>
+
+            {historyLoading && <p className="muted">加载中…</p>}
+            {!historyLoading && historyError && <p className="muted">{historyError}</p>}
+            {!historyLoading && !historyError && historyList.length === 0 && (
+              <p className="muted">暂无历史会话，先聊几句吧。</p>
+            )}
+
+            <div className="history-list">
+              {historyList.map((s) => (
+                <button key={s.id} className="history-item" onClick={() => loadSession(s.id)}>
+                  <div className="history-title">{s.title}</div>
+                  <div className="history-meta">
+                    <span>{formatTime(s.updatedAt)}</span>
+                    <span>{s.messageCount} 条消息</span>
+                    <span className="tag">{s.stage}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {traceOpen && (
         <div className="modal" onClick={() => setTraceOpen(false)}>
           <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
@@ -518,6 +596,13 @@ export default function Chat() {
       )}
     </div>
   );
+}
+
+function formatTime(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 function toolLabel(name: string): string {

@@ -111,6 +111,51 @@ export async function insertLead(lead: {
   }
 }
 
+export interface SessionSummary {
+  id: string;
+  title: string;
+  stage: string;
+  messageCount: number;
+  updatedAt: string | null;
+}
+
+/** 历史会话列表：标题取第一条 user 消息 */
+export async function listSessions(limit = 50): Promise<SessionSummary[]> {
+  const p = getPool();
+  if (!p) return [];
+  try {
+    const res = await p.query(
+      `SELECT
+         id,
+         COALESCE(
+           (SELECT m->>'content'
+              FROM jsonb_array_elements(COALESCE(state->'messages','[]'::jsonb)) WITH ORDINALITY AS t(m, ord)
+             WHERE m->>'role' = 'user'
+             ORDER BY ord
+             LIMIT 1),
+           '(空会话)'
+         ) AS title,
+         COALESCE(state->>'stage', '-') AS stage,
+         jsonb_array_length(COALESCE(state->'messages','[]'::jsonb)) AS message_count,
+         COALESCE(state->>'updatedAt', to_char(updated_at, 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')) AS updated_at
+       FROM sessions
+       ORDER BY updated_at DESC NULLS LAST
+       LIMIT $1`,
+      [limit]
+    );
+    return res.rows.map((r) => ({
+      id: r.id,
+      title: String(r.title ?? "(空会话)"),
+      stage: String(r.stage ?? "-"),
+      messageCount: Number(r.message_count ?? 0),
+      updatedAt: r.updated_at ? String(r.updated_at) : null,
+    }));
+  } catch (err) {
+    console.warn("[repo] 读取会话列表失败:", (err as Error).message);
+    return [];
+  }
+}
+
 export async function getSessionState(sessionId: string): Promise<any | null> {
   const p = getPool();
   if (!p) return null;
