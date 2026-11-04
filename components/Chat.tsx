@@ -19,11 +19,18 @@ interface Interrupt {
   question: string;
 }
 
+interface ServiceStatus {
+  configured: boolean;
+  connected: boolean;
+  error?: string;
+}
 interface Health {
-  llm: { enabled: boolean; model: string | null };
-  postgres: boolean;
-  redis: boolean;
-  langfuse: boolean;
+  llm: { enabled: boolean; model: string | null; baseURL?: string };
+  postgres: ServiceStatus;
+  redis: ServiceStatus;
+  langfuse: { configured: boolean };
+  dataMode: "postgres" | "memory";
+  cacheMode: "redis" | "memory";
 }
 
 const uid = () =>
@@ -234,9 +241,13 @@ export default function Chat() {
           </span>
           {health && (
             <>
-              <span className="badge">{health.postgres ? "PG 已连接" : "内存数据"}</span>
-              <span className="badge">{health.redis ? "Redis 已连接" : "内存缓存"}</span>
-              {health.langfuse && <span className="badge">Langfuse</span>}
+              <span className="badge" title={health.postgres.error ?? ""}>
+                {health.postgres.connected ? "PG 已连接" : health.postgres.configured ? "PG 连接失败" : "内存数据"}
+              </span>
+              <span className="badge" title={health.redis.error ?? ""}>
+                {health.redis.connected ? "Redis 已连接" : health.redis.configured ? "Redis 连接失败" : "内存缓存"}
+              </span>
+              {health.langfuse?.configured && <span className="badge">Langfuse</span>}
             </>
           )}
           {traceId && (
