@@ -1,0 +1,136 @@
+// ============================================================
+// 可观测层：Langfuse（可选）+ 本地 trace（兜底）
+// 面试要点：
+// 1) 一次请求 = 一个 trace，每个步骤 = 一个 span；
+// 2) 没接平台时也要能查（本地 trace 可被 /api/trace/:id 读取）。
+// ============================================================
+import { randomUUID } from "node:crypto";
+import { Langfuse } from "langfuse";
+
+export type LocalSpan = {
+  name: string;
+  input?: unknown;
+  output?: unknown;
+  startMs: number;
+  durationMs?: number;
+};
+
+export type LocalTrace = {
+  id: string;
+  name: string;
+  sessionId: string;
+  input?: unknown;
+  output?: unknown;
+  startMs: number;
+  durationMs?: number;
+  spans: LocalSpan[];
+};
+
+const localTraces = new Map<string, LocalTrace>();
+const MAX_LOCAL_TRACES = 200;
+
+let lf: Langfuse | null = null;
+let lfDisabled = false;
+
+function getLangfuse(): Langfuse | null {
+  if (lfDisabled) return null;
+  if (!process.env.LANGFUSE_PUBLIC_KEY || !process.env.LANGFUSE_SECRET_KEY) return null;
+  if (!lf) {
+    try {
+      lf = new Langfuse({
+        publicKey: process.env.LANGFUSE_PUBLIC_KEY,
+        secretKey: process.env.LANGFUSE_SECRET_KEY,
+        baseUrl: process.env.LANGFUSE_BASE_URL || "https://cloud.langfuse.com",
+      });
+    } catch (err) {
+      console.warn("[trace] Langfuse 初始化失败，使用本地 trace:", (err as Error).message);
+      lfDisabled = true;
+      return null;
+    }
+  }
+  return lf;
+}
+
+export interface SpanHandle {
+  end(output?: unknown): void;
+}
+
+export interface TraceHandle {
+  id: string;
+  span(name: string, input?: unknown): SpanHandle;
+  /** 补记一个已完成的 span（例如工具调用，耗时已知） */
+  addSpan(name: string, input: unknown, output: unknown, durationMs: number): void;
+  end(output?: unknown): void;
+}
+
+export function startTrace(name: string, sessionId: string, input?: unknown): TraceHandle {
+  const id = randomUUID();
+  const record: LocalTrace = { id, name, sessionId, input, startMs: Date.now(), spans: [] };
+  localTraces.set(id, record);
+  if (localTraces.size > MAX_LOCAL_TRACES) {
+    const first = localTraces.keys().next().value;
+    if (first) localTraces.delete(first);
+  }
+
+  const client = getLangfuse();
+  let remoteTrace: any = null;
+  if (client) {
+    try {
+      remoteTrace = (client as any).trace({ id, name, sessionId, input });
+    } catch {
+      remoteTrace = null;
+    }
+  }
+
+  return {
+    id,
+    span(spanName: string, spanInput?: unknown): SpanHandle {
+      const start = Date.now();
+      const local: LocalSpan = { name: spanName, input: spanInput, startMs: start };
+      record.spans.push(local);
+      let remoteSpan: any = null;
+      if (remoteTrace) {
+        try { remoteSpan = remoteTrace.span({ name: spanName, input: spanInput }); } catch { remoteSpan = null; }
+      }
+      return {
+        end(output?: unknown) {
+          local.output = output;
+          local.durationMs = Date.now() - start;
+          if (remoteSpan) {
+            try { remoteSpan.end({ output }); } catch { /* ignore */ }
+          }
+        },
+      };
+    },
+    addSpan(spanName: string, spanInput: unknown, spanOutput: unknown, durationMs: number) {
+      record.spans.push({
+        name: spanName,
+        input: spanInput,
+        output: spanOutput,
+        startMs: Date.now() - durationMs,
+        durationMs,
+      });
+      if (remoteTrace) {
+        try {
+          const rs = remoteTrace.span({ name: spanName, input: spanInput });
+          rs.end({ output: spanOutput });
+        } catch { /* ignore */ }
+      }
+    },
+    end(output?: unknown) {
+      record.output = output;
+      record.durationMs = Date.now() - record.startMs;
+      if (remoteTrace) {
+        try { remoteTrace.update({ output }); } catch { /* ignore */ }
+      }
+      // 异步 flush，不阻塞请求
+      if (client) {
+        (client as any).flushAsync?.().catch?.(() => {});
+      }
+    },
+  };
+}
+
+export function getLocalTrace(id: string): LocalTrace | undefined {
+  return localTraces.get(id);
+}

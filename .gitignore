@@ -1,0 +1,31 @@
+# 依赖
+node_modules/
+.pnpm-store/
+
+# Next.js 构建产物
+.next/
+out/
+
+# 环境变量与密钥（严禁提交）
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# 日志
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# 系统 / 编辑器
+.DS_Store
+.idea/
+.vscode/
+
+# 其他
+coverage/
+*.tsbuildinfo
+
+# 本地一次性开发脚本
+scripts/dev/
