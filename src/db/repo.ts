@@ -111,6 +111,17 @@ export async function insertLead(lead: {
   }
 }
 
+export async function getSessionState(sessionId: string): Promise<any | null> {
+  const p = getPool();
+  if (!p) return null;
+  try {
+    const res = await p.query(`SELECT state FROM sessions WHERE id = $1`, [sessionId]);
+    return res.rows[0]?.state ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function saveSessionState(sessionId: string, state: unknown): Promise<void> {
   const p = getPool();
   if (!p) return;

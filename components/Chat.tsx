@@ -62,6 +62,26 @@ export default function Chat() {
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
+  // ⭐ 刷新后恢复：从 localStorage 取 sessionId，再回读数据库里的对话
+  useEffect(() => {
+    const saved = typeof window !== "undefined" ? localStorage.getItem("car-advisor-session") : null;
+    if (!saved) return;
+    setSessionId(saved);
+    (async () => {
+      try {
+        const r = await fetch(`/api/session/${saved}`);
+        if (!r.ok) return;
+        const data = await r.json();
+        const msgs = (data.session?.messages ?? []).map((m: any) => ({
+          id: uid(),
+          role: (m.role === "user" ? "user" : "assistant") as "user" | "assistant",
+          text: m.content ?? "",
+        }));
+        if (msgs.length) setMessages(msgs);
+      } catch {}
+    })();
+  }, []);
+
   useEffect(() => {
     fetch("/api/health")
       .then((r) => r.json())
@@ -133,6 +153,7 @@ export default function Chat() {
         switch (event) {
           case "session":
             setSessionId(data.sessionId);
+            localStorage.setItem("car-advisor-session", data.sessionId);
             break;
           case "trace":
             setTraceId(data.traceId);
@@ -211,6 +232,18 @@ export default function Chat() {
     abortRef.current?.abort();
   }
 
+  function newSession() {
+    const id = uid();
+    localStorage.setItem("car-advisor-session", id);
+    setSessionId(id);
+    setMessages([]);
+    setQuickReplies([]);
+    setInterrupt(null);
+    setTraceId("");
+    setError("");
+    setNotice("");
+  }
+
   async function openTrace() {
     if (!traceId) return;
     setTraceOpen(true);
@@ -250,6 +283,9 @@ export default function Chat() {
               {health.langfuse?.configured && <span className="badge">Langfuse</span>}
             </>
           )}
+          <button className="badge trace-btn" onClick={newSession}>
+            新对话
+          </button>
           {traceId && (
             <button className="badge trace-btn" onClick={openTrace}>
               查看 Trace

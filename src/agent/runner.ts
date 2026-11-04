@@ -7,7 +7,7 @@ import { getAdvisorGraph } from "./graph";
 import { hasLLM } from "./llm";
 import { startTrace } from "../observability/trace";
 import { applyOutputGuardrails } from "../guardrails/guard";
-import { saveSessionState } from "../db/repo";
+import { getSessionState, saveSessionState } from "../db/repo";
 import type { Candidate, Citation, Comparison, ToolEvent } from "../types";
 
 export interface TurnInput {
@@ -74,6 +74,22 @@ export async function runAdvisorTurn(input: TurnInput): Promise<TurnResult> {
   if (result.__interrupt__?.length) {
     const payload = result.__interrupt__[0]?.value ?? {};
     trace.end({ interrupted: true, question: payload.question });
+
+    // 中断也要记录对话（否则刷新后看不到"我预约了但还没确认"）
+    const prev = (await getSessionState(input.sessionId)) ?? {};
+    const prevMsgs = Array.isArray(prev.messages) ? prev.messages : [];
+    const at = new Date().toISOString();
+    const newMsgs = [
+      ...(input.message ? [{ role: "user", content: input.message, at }] : []),
+      ...(input.resume ? [{ role: "user", content: input.resume, at }] : []),
+      { role: "assistant", content: String(payload.question ?? ""), at, interrupt: true },
+    ];
+    await saveSessionState(input.sessionId, {
+      ...prev,
+      stage: result.stage ?? "confirm",
+      messages: [...prevMsgs, ...newMsgs],
+      updatedAt: at,
+    });
     return {
       sessionId: input.sessionId,
       traceId: trace.id,
@@ -95,12 +111,22 @@ export async function runAdvisorTurn(input: TurnInput): Promise<TurnResult> {
   // 输出侧护栏：绝对化用语替换 + 价格免责声明
   const guarded = applyOutputGuardrails(String(result.answer ?? ""));
 
-  // 会话状态落库（异步，失败不影响主流程）
-  void saveSessionState(input.sessionId, {
+  // ⭐ 持久化完整对话：刷新页面后可按 sessionId 恢复
+  const prev = (await getSessionState(input.sessionId)) ?? {};
+  const prevMsgs = Array.isArray(prev.messages) ? prev.messages : [];
+  const at = new Date().toISOString();
+  const newMsgs = [
+    ...(input.message ? [{ role: "user", content: input.message, at }] : []),
+    ...(input.resume ? [{ role: "user", content: input.resume, at }] : []),
+    ...(guarded.text ? [{ role: "assistant", content: guarded.text, at }] : []),
+  ];
+  await saveSessionState(input.sessionId, {
+    ...prev,
     stage: result.stage,
     constraints: result.constraints,
     candidates: result.candidates?.map((c: Candidate) => c.modelId),
-    updatedAt: new Date().toISOString(),
+    messages: [...prevMsgs, ...newMsgs],
+    updatedAt: at,
   });
 
   trace.end({ stage: result.stage, answerLength: guarded.text.length });
