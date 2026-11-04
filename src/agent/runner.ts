@@ -27,6 +27,8 @@ export interface TurnResult {
   toolEvents: ToolEvent[];
   stage: string;
   mode: "live" | "mock";
+  /** 自我介绍等固定文案不走 LLM 润色，避免被改写 */
+  skipPolish?: boolean;
 }
 
 export async function runAdvisorTurn(input: TurnInput): Promise<TurnResult> {
@@ -113,6 +115,7 @@ export async function runAdvisorTurn(input: TurnInput): Promise<TurnResult> {
     toolEvents: turnEvents,
     stage: result.stage ?? "recommend",
     mode: hasLLM() ? "live" : "mock",
+    skipPolish: result.intent === "smalltalk",
   };
 }
 

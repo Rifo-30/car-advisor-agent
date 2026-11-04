@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
         for await (const chunk of streamAnswer(result.answer, factSheet, (reason) => {
           // LLM 调用失败时明确告知前端，并用模板结果兜底
           send("notice", { message: "LLM 调用失败，已自动切换模板回答", detail: reason });
-        })) {
+        }, result.skipPolish)) {
           send("delta", { text: chunk });
         }
 

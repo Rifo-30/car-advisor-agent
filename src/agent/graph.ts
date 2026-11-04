@@ -73,6 +73,8 @@ function routeFromClassify(state: State): string {
   const hasCandidates = state.candidates.length > 0;
 
   switch (state.intent) {
+    case "smalltalk":
+      return "smalltalk";
     case "book":
       return hasCandidates || matchModelIds(state.messages.at(-1)?.content ?? "").length
         ? "confirm"
@@ -90,7 +92,8 @@ function routeFromClassify(state: State): string {
     case "recommend":
       return needMoreInfo(state) ? "clarify" : "retrieve";
     default:
-      return hasCandidates ? "reviews" : "clarify";
+      // 不属于任何选车意图时，做自我介绍并引导用户，而不是生硬地要求澄清
+      return hasCandidates ? "reviews" : "smalltalk";
   }
 }
 
@@ -314,6 +317,25 @@ async function confirmNode(state: State) {
   };
 }
 
+// ---------- 9.5 节点：自我介绍 / 闲聊 ----------
+async function smalltalkNode(_state: State) {
+  const answer = [
+    "我是 **懂车顾问**，一个专注选车决策的 AI 助手。",
+    "",
+    "我可以帮你：",
+    "1. 按预算和用途筛选车型",
+    "2. 解释推荐理由和每款车的短板",
+    "3. 做多车参数对比",
+    "4. 估算落地价",
+    "5. 查评测与车主口碑",
+    "6. 预约试驾（需要你确认）",
+    "",
+    "告诉我你的**预算**和**主要用途**（通勤/家用/长途），我们就可以开始。",
+  ].join("\n");
+
+  return { answer, stage: "clarify" as Stage };
+}
+
 // ---------- 10. 编译图（单例） ----------
 let compiled: ReturnType<typeof buildGraph> | null = null;
 
@@ -328,8 +350,10 @@ function buildGraph() {
     .addNode("quote", quoteNode)
     .addNode("reviews", reviewsNode)
     .addNode("confirm", confirmNode)
+    .addNode("smalltalk", smalltalkNode)
     .addEdge(START, "classify")
     .addConditionalEdges("classify", routeFromClassify, {
+      smalltalk: "smalltalk",
       clarify: "clarify",
       retrieve: "retrieve",
       compare: "compare",
@@ -343,6 +367,7 @@ function buildGraph() {
     .addEdge("quote", END)
     .addEdge("reviews", END)
     .addEdge("confirm", END)
+    .addEdge("smalltalk", END)
     .compile({ checkpointer });
 }
 

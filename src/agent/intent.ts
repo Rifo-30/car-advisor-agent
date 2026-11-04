@@ -7,6 +7,7 @@ import { CARS } from "../data/cars";
 import type { Candidate, Constraints, EnergyType } from "../types";
 
 export type Intent =
+  | "smalltalk"
   | "recommend"
   | "compare"
   | "price"
@@ -91,8 +92,14 @@ function parseCharging(text: string): boolean | undefined {
 export function parseMessage(text: string, candidates: Candidate[]): ParsedMessage {
   let intent: Intent = "unknown";
 
-  // 顺序很重要：预约 > 对比 > 价格 > 口碑 > 推荐
-  if (/试驾|预约|到店|看车/.test(text)) intent = "book";
+  // ⭐ 先识别寒暄/自我介绍：这类问题不该逼用户"澄清需求"
+  const identity = /你是谁|你叫什么|你是什么|介绍一下你自己|你能做什么|你有什么功能|你是干什么的/;
+  const greeting = /^(你好|您好|hi|hello|嗨|哈喽|在吗)[!！。,.，\s]*$/i;
+  const thanks = /^(谢谢|感谢|多谢|再见|拜拜|ok|好的)[!！。,.，\s]*$/i;
+
+  // 顺序很重要：寒暄 > 预约 > 对比 > 价格 > 口碑 > 推荐
+  if (identity.test(text) || greeting.test(text) || thanks.test(text)) intent = "smalltalk";
+  else if (/试驾|预约|到店|看车/.test(text)) intent = "book";
   else if (/对比|比较|哪个好|差异|区别/.test(text)) intent = "compare";
   else if (/落地|多少钱|价格|优惠|报价/.test(text)) intent = "price";
   else if (/口碑|评价|怎么样|缺点|优点|真实|吐槽/.test(text)) intent = "reviews";

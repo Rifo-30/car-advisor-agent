@@ -44,7 +44,8 @@ export function applyOutputGuardrails(text: string): GuardResult {
     }
   }
 
-  if (/价格|落地|万元|报价/.test(out) && !out.includes("以经销商")) {
+  // 只有真正出现「数字 + 万」的报价时才补免责声明（避免自我介绍被误判）
+  if (/\d+(?:\.\d+)?\s*万/.test(out) && !out.includes("以经销商")) {
     out += "\n\n> 以上价格为参考估算，以经销商实际报价及官方配置表为准。";
     warnings.push("已补充价格免责声明");
   }

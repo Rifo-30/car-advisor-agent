@@ -48,9 +48,10 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function* streamAnswer(
   baseAnswer: string,
   factSheet: string,
-  onFallback?: (reason: string) => void
+  onFallback?: (reason: string) => void,
+  forceTemplate = false
 ): AsyncGenerator<string> {
-  if (hasLLM()) {
+  if (hasLLM() && !forceTemplate) {
     try {
       const model = new ChatOpenAI(llmOptions() as any);
 
