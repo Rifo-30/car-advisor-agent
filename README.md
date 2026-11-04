@@ -236,3 +236,33 @@ const phoneReply = interrupt({ type: "phone", question: "请提供手机号" });
 - 本项目所有车型、参数、价格、评测均为**虚构演示数据**，不代表任何真实在售车型；
 - 价格估算仅供参考，实际以经销商报价与官方配置为准；
 - 不构成购买建议；不涉及任何公司内部数据。
+
+---
+
+## 10. 本地数据库（macOS 一键脚本）
+
+如果本机已经装好 PostgreSQL 14 + pgvector + Redis（二进制在 `/usr/local/opt/`），直接运行：
+
+```bash
+bash scripts/local-db.sh
+```
+
+脚本会依次完成：
+
+1. 初始化数据目录（首次运行）
+2. 启动 PostgreSQL（端口 5432）
+3. 创建数据库 `car_advisor`
+4. 启用 `vector` 扩展
+5. 启动 Redis（端口 6379）
+6. 写入种子数据（12 车型 / 24 配置 / 24 评测）
+7. 打印行数与扩展版本做验证
+
+然后：
+
+```bash
+pnpm dev
+```
+
+打开 `http://localhost:3000/api/health`，应看到 `dataMode: "postgres"`、`cacheMode: "redis"`。
+
+> ⚠️ 必须在**你自己的终端**运行（不要在 Codex 沙箱内），因为 PostgreSQL 需要 `shmget` 系统调用。
