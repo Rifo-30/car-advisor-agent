@@ -131,6 +131,57 @@ export function startTrace(name: string, sessionId: string, input?: unknown): Tr
   };
 }
 
+/** 追加一个 span（用于 trace 结束后才发生的步骤，如 LLM 润色） */
+export function appendSpan(
+  traceId: string,
+  name: string,
+  input: unknown,
+  output: unknown,
+  durationMs: number
+): void {
+  const record = localTraces.get(traceId);
+  if (!record) return;
+  record.spans.push({
+    name,
+    input,
+    output,
+    startMs: Date.now() - durationMs,
+    durationMs,
+  });
+}
+
+/** 重新结束 trace：会重算总耗时，把后续步骤算进去 */
+export function finishTrace(traceId: string, output: unknown): void {
+  const record = localTraces.get(traceId);
+  if (!record) return;
+  record.output = output;
+  record.durationMs = Date.now() - record.startMs;
+}
+
+export interface TraceSummary {
+  id: string;
+  name: string;
+  sessionId: string;
+  startMs: number;
+  durationMs: number | null;
+  spanCount: number;
+}
+
+/** 最近的 trace 列表（新的在前） */
+export function listLocalTraces(limit = 50): TraceSummary[] {
+  return [...localTraces.values()]
+    .sort((a, b) => b.startMs - a.startMs)
+    .slice(0, limit)
+    .map((t) => ({
+      id: t.id,
+      name: t.name,
+      sessionId: t.sessionId,
+      startMs: t.startMs,
+      durationMs: t.durationMs ?? null,
+      spanCount: t.spans.length,
+    }));
+}
+
 export function getLocalTrace(id: string): LocalTrace | undefined {
   return localTraces.get(id);
 }

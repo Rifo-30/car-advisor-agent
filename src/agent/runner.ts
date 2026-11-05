@@ -52,7 +52,16 @@ export async function runAdvisorTurn(input: TurnInput): Promise<TurnResult> {
       };
 
   // 说明：Command 的泛型与 StateGraph 推导存在类型摩擦，这里显式放宽类型
-  const result: any = await graph.invoke(graphInput as any, config as any);
+  let result: any;
+  try {
+    result = await graph.invoke(graphInput as any, config as any);
+  } catch (err) {
+    // ⭐ 异常也要闭环：否则 span/trace 永远停在"未结束"状态
+    const message = (err as Error).message;
+    span.end({ error: message });
+    trace.end({ error: message });
+    throw err;
+  }
   span.end({ stage: result.stage, interrupted: Boolean(result.__interrupt__) });
 
   // 本轮产生的工具事件（状态里的 toolEvents 是累积的，需要按 turnId 过滤）
@@ -129,7 +138,11 @@ export async function runAdvisorTurn(input: TurnInput): Promise<TurnResult> {
     updatedAt: at,
   });
 
-  trace.end({ stage: result.stage, answerLength: guarded.text.length });
+  trace.end({
+    stage: result.stage,
+    answerLength: guarded.text.length,
+    guardrailWarnings: guarded.warnings,
+  });
 
   return {
     sessionId: input.sessionId,

@@ -289,3 +289,32 @@ pnpm dev
 打开 `http://localhost:3000/api/health`，应看到 `dataMode: "postgres"`、`cacheMode: "redis"`。
 
 > ⚠️ 必须在**你自己的终端**运行（不要在 Codex 沙箱内），因为 PostgreSQL 需要 `shmget` 系统调用。
+
+---
+
+## 11. 本地 Trace（无需任何外部平台）
+
+| 接口 | 说明 |
+| --- | --- |
+| `GET /api/trace/:id` | 单个 trace 详情（含所有 span） |
+| `GET /api/traces?limit=50` | 最近的 trace 列表 |
+
+一次对话记录的 span：
+
+```
+agent.turn
+├── graph.invoke       LangGraph 执行（stage / interrupted / error）
+├── tool:search_cars   工具调用（参数、结果摘要、耗时）
+├── tool:compare_cars
+├── tool:estimate_price
+├── tool:search_reviews
+├── tool:create_test_drive_lead
+└── llm:polish         LLM 润色（模型、字符数、是否降级、耗时）
+```
+
+- 前端右上角「查看 Trace」可直接看时间线
+- 异常路径会写入 `error` 并闭环（不会留下未结束的 span）
+- 护栏替换的告警记录在 `output.guardrailWarnings`
+
+**已知限制**：trace 存在进程内存（最多 200 条），重启即清空。
+需要跨重启保留时可接 Langfuse，或将 trace 表持久化到 Postgres。

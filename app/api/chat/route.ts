@@ -7,6 +7,7 @@ import type { NextRequest } from "next/server";
 import { runAdvisorTurn, buildFactSheet } from "@/src/agent/runner";
 import { streamAnswer } from "@/src/agent/llm";
 import { detectInjection, sanitizeInput } from "@/src/guardrails/guard";
+import { appendSpan, finishTrace } from "@/src/observability/trace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,12 +60,30 @@ export async function POST(req: NextRequest) {
         // 答案流式输出（有 Key 走 LLM 润色，无 Key 走模板打字机）
         const factSheet = buildFactSheet(result);
         send("stage", { stage: "generating" });
+
+        // ⭐ 记录 LLM 润色这一步（发生在 graph 之后，需要单独补 span）
+        const llmStart = Date.now();
+        let llmFallback = false;
+        let llmChars = 0;
+
         for await (const chunk of streamAnswer(result.answer, factSheet, (reason) => {
           // LLM 调用失败时明确告知前端，并用模板结果兜底
+          llmFallback = true;
           send("notice", { message: "LLM 调用失败，已自动切换模板回答", detail: reason });
         }, result.skipPolish)) {
+          llmChars += chunk.length;
           send("delta", { text: chunk });
         }
+
+        const llmMs = Date.now() - llmStart;
+        appendSpan(
+          result.traceId,
+          "llm:polish",
+          { model: process.env.OPENAI_MODEL ?? null, skipped: Boolean(result.skipPolish), factSheetLength: factSheet.length },
+          { fallback: llmFallback, chars: llmChars },
+          llmMs
+        );
+        finishTrace(result.traceId, { stage: result.stage, llmMs, fallback: llmFallback, skipped: Boolean(result.skipPolish) });
 
         send("quickReplies", { options: ["看对比", "估算落地价", "聊聊口碑", "预约试驾"] });
         send("done", { mode: result.mode, stage: result.stage });
