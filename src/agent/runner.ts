@@ -32,7 +32,7 @@ export interface TurnResult {
 }
 
 export async function runAdvisorTurn(input: TurnInput): Promise<TurnResult> {
-  const graph = getAdvisorGraph();
+  const graph = await getAdvisorGraph();
   const config = { configurable: { thread_id: input.sessionId } };
   const trace = startTrace("agent.turn", input.sessionId, {
     message: input.message,

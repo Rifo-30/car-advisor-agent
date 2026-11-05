@@ -16,6 +16,7 @@ import {
   StateGraph,
   interrupt,
 } from "@langchain/langgraph";
+import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 import type { Candidate, ChatMessage, Citation, Comparison, Constraints, Stage, ToolEvent } from "../types";
 import { randomUUID } from "node:crypto";
 import { parseMessage, matchModelIds } from "./intent";
@@ -337,11 +338,33 @@ async function smalltalkNode(_state: State) {
 }
 
 // ---------- 10. 编译图（单例） ----------
-let compiled: ReturnType<typeof buildGraph> | null = null;
+// ⭐ Checkpointer 选择策略：
+//   有 DATABASE_URL → PostgresSaver（跨重启/多实例持久化）
+//   无 DATABASE_URL → MemorySaver（本地开发，状态只在内存）
+//   PostgresSaver 初始化失败 → 自动降级 MemorySaver，不影响主流程
+let compiledPromise: Promise<any> | null = null;
 
-function buildGraph() {
-  const checkpointer = new MemorySaver(); // 生产可换成 Redis/Postgres checkpointer
+async function createCheckpointer(): Promise<any> {
+  if (!process.env.DATABASE_URL) {
+    console.log("[graph] 未配置 DATABASE_URL → 使用 MemorySaver（状态不持久化）");
+    return new MemorySaver();
+  }
 
+  try {
+    const saver = PostgresSaver.fromConnString(process.env.DATABASE_URL);
+    await saver.setup(); // 首次运行自动创建 checkpoint_* 表（幂等）
+    console.log("[graph] 使用 PostgresSaver（状态持久化）");
+    return saver;
+  } catch (err) {
+    console.warn(
+      "[graph] PostgresSaver 初始化失败，降级为 MemorySaver:",
+      (err as Error).message
+    );
+    return new MemorySaver();
+  }
+}
+
+function buildGraph(checkpointer: any) {
   return new StateGraph(AdvisorState)
     .addNode("classify", classifyNode)
     .addNode("clarify", clarifyNode)
@@ -371,9 +394,14 @@ function buildGraph() {
     .compile({ checkpointer });
 }
 
-export function getAdvisorGraph() {
-  if (!compiled) compiled = buildGraph();
-  return compiled;
+export async function getAdvisorGraph() {
+  if (!compiledPromise) {
+    compiledPromise = (async () => {
+      const checkpointer = await createCheckpointer();
+      return buildGraph(checkpointer);
+    })();
+  }
+  return compiledPromise;
 }
 
 export type { State as AdvisorGraphState };

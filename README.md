@@ -84,7 +84,7 @@ flowchart TB
   UI[Next.js 前端<br/>SSE 流式 + 卡片 + 对比表]
   API[API Routes<br/>/api/chat 等]
   G[LangGraph 状态机<br/>classify → clarify/retrieve/compare/quote/reviews/confirm]
-  MEM[MemorySaver<br/>thread_id 会话状态]
+  MEM[PostgresSaver<br/>checkpoint 持久化]
   TOOLS[工具层<br/>search/compare/price/reviews/lead]
   RAG[RAG 检索<br/>pgvector → BM25 降级]
   PG[(PostgreSQL + pgvector)]
@@ -223,13 +223,36 @@ const phoneReply = interrupt({ type: "phone", question: "请提供手机号" });
 
 ## 8. 已知限制与下一步
 
-- [ ] Checkpointer 目前用 `MemorySaver`，生产应替换为 Redis/Postgres 持久化
+- [x] Checkpointer 已接入 **PostgresSaver**（无 DATABASE_URL 时自动降级 MemorySaver）
 - [ ] RAG 目前是"向量 + 关键词"，可加 rerank 提升召回质量
 - [ ] 车型数据为虚构演示数据，接入真实数据需做清洗与授权
 - [ ] 可扩展为 MCP Server，供多个 Agent/宿主复用工具
 - [ ] 可增加多 Agent 编排（选车顾问 + 价格顾问 + 内容顾问）
 
 ---
+
+## 8.1 Checkpointer（状态持久化）
+
+| 条件 | 使用的 Checkpointer | 说明 |
+| --- | --- | --- |
+| 有 `DATABASE_URL` | **PostgresSaver** | 状态写入 `checkpoint_*` 表，跨重启/多实例恢复 |
+| 无 `DATABASE_URL` | MemorySaver | 仅内存，适合本地开发/测试 |
+| PG 连接失败 | MemorySaver（自动降级） | 不影响主流程 |
+
+PostgresSaver 首次运行会自动建表：
+
+```sql
+checkpoint_migrations
+checkpoints
+checkpoint_blobs
+checkpoint_writes
+```
+
+清理 30 天未活跃会话的检查点：
+
+```bash
+psql "$DATABASE_URL" -f scripts/clear-checkpoints.sql
+```
 
 ## 9. 数据与合规声明
 
