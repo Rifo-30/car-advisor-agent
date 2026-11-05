@@ -9,7 +9,9 @@
     "build": "next build",
     "start": "next start -p 3000",
     "eval": "tsx src/eval/eval.ts",
-    "db:seed": "tsx src/db/seed.ts"
+    "db:seed": "tsx src/db/seed.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts"
   },
   "engines": {
     "node": ">=20"

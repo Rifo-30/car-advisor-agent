@@ -8,6 +8,7 @@ import { runAdvisorTurn, buildFactSheet } from "@/src/agent/runner";
 import { streamAnswer } from "@/src/agent/llm";
 import { detectInjection, sanitizeInput } from "@/src/guardrails/guard";
 import { appendSpan, finishTrace } from "@/src/observability/trace";
+import { rateLimit } from "@/src/security/rateLimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +18,17 @@ export async function POST(req: NextRequest) {
   const sessionId = String(body.sessionId || crypto.randomUUID());
   const message = body.message ? sanitizeInput(String(body.message)) : undefined;
   const resume = body.resume ? String(body.resume) : undefined;
+  // Demo 级身份：真实生产应换成登录态 / JWT 校验
+  const userId = String(req.headers.get("x-user-id") || body.userId || "anonymous");
+
+  // ⭐ 按用户限流：每分钟 20 次
+  const rl = rateLimit(`chat:${userId}`, 20, 60_000);
+  if (!rl.ok) {
+    return Response.json(
+      { ok: false, error: "RATE_LIMITED", retryAfterMs: rl.retryAfterMs },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } }
+    );
+  }
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
@@ -40,7 +52,7 @@ export async function POST(req: NextRequest) {
           return;
         }
 
-        const result = await runAdvisorTurn({ sessionId, message, resume });
+        const result = await runAdvisorTurn({ sessionId, userId, message, resume });
         send("trace", { traceId: result.traceId });
 
         // 人机协同：图在 interrupt 处暂停

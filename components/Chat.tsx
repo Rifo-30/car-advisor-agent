@@ -33,6 +33,19 @@ interface Health {
   cacheMode: "redis" | "memory";
 }
 
+function getUserId(): string {
+  if (typeof window === "undefined") return "anonymous";
+  let id = localStorage.getItem("car-advisor-user");
+  if (!id) {
+    id =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `u-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    localStorage.setItem("car-advisor-user", id);
+  }
+  return id;
+}
+
 const uid = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -73,7 +86,7 @@ export default function Chat() {
     setSessionId(saved);
     (async () => {
       try {
-        const r = await fetch(`/api/session/${saved}`);
+        const r = await fetch(`/api/session/${saved}`, { headers: { "x-user-id": getUserId() } });
         if (!r.ok) return;
         const data = await r.json();
         const msgs = (data.session?.messages ?? []).map((m: any) => ({
@@ -146,7 +159,7 @@ export default function Chat() {
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-user-id": getUserId() },
         body: JSON.stringify({ sessionId, ...payload }),
         signal: ctrl.signal,
       });
@@ -253,7 +266,7 @@ export default function Chat() {
     setHistoryLoading(true);
     setHistoryError("");
     try {
-      const r = await fetch("/api/sessions?limit=50");
+      const r = await fetch("/api/sessions?limit=50", { headers: { "x-user-id": getUserId() } });
       const data = await r.json();
       setHistoryList(data.sessions ?? []);
       if (data.note) setHistoryError(data.note);
@@ -266,7 +279,7 @@ export default function Chat() {
 
   async function loadSession(id: string) {
     try {
-      const r = await fetch(`/api/session/${id}`);
+      const r = await fetch(`/api/session/${id}`, { headers: { "x-user-id": getUserId() } });
       if (!r.ok) return;
       const data = await r.json();
       const msgs = (data.session?.messages ?? []).map((m: any) => ({

@@ -12,6 +12,7 @@ import type { Candidate, Citation, Comparison, ToolEvent } from "../types";
 
 export interface TurnInput {
   sessionId: string;
+  userId?: string;
   message?: string;
   resume?: string;
 }
@@ -48,6 +49,7 @@ export async function runAdvisorTurn(input: TurnInput): Promise<TurnResult> {
     ? new Command({ resume: input.resume })
     : {
         sessionId: input.sessionId,
+        userId: input.userId ?? "anonymous",
         messages: [{ role: "user" as const, content: input.message ?? "" }],
       };
 
@@ -95,6 +97,7 @@ export async function runAdvisorTurn(input: TurnInput): Promise<TurnResult> {
     ];
     await saveSessionState(input.sessionId, {
       ...prev,
+      userId: input.userId ?? prev.userId ?? "anonymous",
       stage: result.stage ?? "confirm",
       messages: [...prevMsgs, ...newMsgs],
       updatedAt: at,
@@ -131,6 +134,7 @@ export async function runAdvisorTurn(input: TurnInput): Promise<TurnResult> {
   ];
   await saveSessionState(input.sessionId, {
     ...prev,
+    userId: input.userId ?? prev.userId ?? "anonymous",
     stage: result.stage,
     constraints: result.constraints,
     candidates: result.candidates?.map((c: Candidate) => c.modelId),

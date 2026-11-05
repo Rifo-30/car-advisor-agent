@@ -1,4 +1,4 @@
-// 历史会话列表：GET /api/sessions?limit=50
+// 历史会话列表：GET /api/sessions?limit=50（仅当前用户）
 import { listSessions } from "@/src/db/repo";
 import { hasDb } from "@/src/db/index";
 
@@ -11,6 +11,7 @@ export async function GET(req: Request) {
   }
   const url = new URL(req.url);
   const limit = Math.min(Number(url.searchParams.get("limit") ?? 50) || 50, 200);
-  const sessions = await listSessions(limit);
+  const userId = String(req.headers.get("x-user-id") || "anonymous");
+  const sessions = await listSessions(limit, userId);
   return Response.json({ ok: true, sessions });
 }

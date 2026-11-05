@@ -6,6 +6,7 @@
 // ============================================================
 import { randomUUID } from "node:crypto";
 import { Langfuse } from "langfuse";
+import { getTraceRecord, listTraceRecords, saveTraceRecord } from "../db/repo";
 
 export type LocalSpan = {
   name: string;
@@ -127,6 +128,8 @@ export function startTrace(name: string, sessionId: string, input?: unknown): Tr
       if (client) {
         (client as any).flushAsync?.().catch?.(() => {});
       }
+      // ⭐ 持久化到 Postgres（重启不丢）
+      void saveTraceRecord(record);
     },
   };
 }
@@ -156,6 +159,7 @@ export function finishTrace(traceId: string, output: unknown): void {
   if (!record) return;
   record.output = output;
   record.durationMs = Date.now() - record.startMs;
+  void saveTraceRecord(record);
 }
 
 export interface TraceSummary {
@@ -184,4 +188,20 @@ export function listLocalTraces(limit = 50): TraceSummary[] {
 
 export function getLocalTrace(id: string): LocalTrace | undefined {
   return localTraces.get(id);
+}
+
+/** 先查内存，再查 Postgres（重启后仍可读到） */
+export async function getTrace(id: string): Promise<LocalTrace | null> {
+  return localTraces.get(id) ?? (await getTraceRecord(id));
+}
+
+/** 合并内存 + Postgres 的 trace 列表 */
+export async function listTraces(limit = 50): Promise<TraceSummary[]> {
+  const mem = listLocalTraces(limit);
+  if (mem.length >= limit) return mem;
+  const db = (await listTraceRecords(limit)) as TraceSummary[];
+  const seen = new Set(mem.map((t) => t.id));
+  return [...mem, ...db.filter((t) => !seen.has(t.id))]
+    .sort((a, b) => b.startMs - a.startMs)
+    .slice(0, limit);
 }

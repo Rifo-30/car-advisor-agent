@@ -4,7 +4,7 @@
 // 用规则解析更稳定、可测试、可解释，避免模型把 15 万说成 20 万。
 // ============================================================
 import { CARS } from "../data/cars";
-import type { Candidate, Constraints, EnergyType } from "../types";
+import type { Candidate, CarModel, Constraints, EnergyType } from "../types";
 
 export type Intent =
   | "smalltalk"
@@ -25,8 +25,9 @@ export interface ParsedMessage {
 
 const CITY_LIST = ["北京", "上海", "广州", "深圳", "杭州", "成都", "武汉", "南京", "西安", "重庆", "苏州", "天津"];
 
-export function matchModelIds(text: string): string[] {
-  return CARS
+// ⭐ 允许传入数据库中的车型列表，避免与静态 CARS 不一致
+export function matchModelIds(text: string, cars: CarModel[] = CARS): string[] {
+  return cars
     .filter((c) => text.includes(c.series) || text.includes(`${c.brand}${c.series}`) || text.includes(`${c.brand} ${c.series}`))
     .map((c) => c.id);
 }
@@ -89,7 +90,7 @@ function parseCharging(text: string): boolean | undefined {
   return undefined;
 }
 
-export function parseMessage(text: string, candidates: Candidate[]): ParsedMessage {
+export function parseMessage(text: string, candidates: Candidate[], cars: CarModel[] = CARS): ParsedMessage {
   let intent: Intent = "unknown";
 
   // ⭐ 先识别寒暄/自我介绍：这类问题不该逼用户"澄清需求"
@@ -119,17 +120,17 @@ export function parseMessage(text: string, candidates: Candidate[]): ParsedMessa
     if (constraints[k] === undefined) delete constraints[k];
   }
 
-  const modelIds = matchModelIds(text);
+  const modelIds = matchModelIds(text, cars);
 
   // 序数引用：「第一款」「前两款」「第1款」
   const ordinal: number[] = [];
   if (/前两|这两|都对比|全部对比/.test(text) && candidates.length >= 2) {
     ordinal.push(...candidates.map((_, i) => i).slice(0, 3));
   }
-  const one = text.match(/第([一二三123]|[1-3])款/);
-  if (one) {
-    const map: Record<string, number> = { 一: 0, 二: 1, 三: 2, "1": 0, "2": 1, "3": 2 };
-    ordinal.push(map[one[1]] ?? 0);
+  // ⭐ 解析所有「第X款」，支持"对比第一款和第三款"
+  const map: Record<string, number> = { 一: 0, 二: 1, 三: 2, "1": 0, "2": 1, "3": 2 };
+  for (const m of text.matchAll(/第([一二三123])款/g)) {
+    ordinal.push(map[m[1]] ?? 0);
   }
 
   return { intent, constraints, modelIds, ordinal: ordinal.length ? ordinal : undefined };

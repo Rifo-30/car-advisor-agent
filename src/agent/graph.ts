@@ -20,12 +20,16 @@ import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 import type { Candidate, ChatMessage, Citation, Comparison, Constraints, Stage, ToolEvent } from "../types";
 import { randomUUID } from "node:crypto";
 import { parseMessage, matchModelIds } from "./intent";
+import { parseConfirmDecision } from "./confirm";
+import { isValidPhone } from "../guardrails/guard";
 import { searchCars, compareCars, estimatePrice, searchReviews, createTestDriveLead } from "../tools/index";
 import { getAllCars } from "../db/repo";
 
 // ---------- 1. 定义状态 ----------
 const AdvisorState = Annotation.Root({
   sessionId: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }),
+  userId: Annotation<string>({ reducer: (_a, b) => b, default: () => "anonymous" }),
+  ordinal: Annotation<number[]>({ reducer: (_a, b) => b, default: () => [] }),
   turnId: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }),
   messages: Annotation<ChatMessage[]>({
     reducer: (a, b) => [...a, ...b],          // 消息只追加，不覆盖
@@ -52,12 +56,15 @@ type State = typeof AdvisorState.State;
 // ---------- 2. 节点：分类 ----------
 async function classifyNode(state: State) {
   const last = state.messages[state.messages.length - 1];
-  const parsed = parseMessage(last?.content ?? "", state.candidates);
+  // ⭐ 用数据库里的车型做名称匹配，避免静态数据与库不一致
+  const cars = await getAllCars();
+  const parsed = parseMessage(last?.content ?? "", state.candidates, cars);
 
   return {
     turnId: randomUUID(),   // 每轮唯一 ID：前端只展示本轮工具事件
     intent: parsed.intent,
     constraints: { ...state.constraints, ...parsed.constraints },
+    ordinal: parsed.ordinal ?? [],
     stage: "clarify" as Stage,
   };
 }
@@ -184,8 +191,17 @@ async function retrieveNode(state: State) {
 async function compareNode(state: State) {
   const started = Date.now();
   const last = state.messages.at(-1)?.content ?? "";
-  const named = matchModelIds(last);
-  const ids = named.length >= 2 ? named : state.candidates.slice(0, 3).map((c) => c.modelId);
+  const cars = await getAllCars();
+  const named = matchModelIds(last, cars);
+  // ⭐ 支持"第一款/前两款/第三款"这类序数引用
+  const ordinalIds = (state.ordinal ?? [])
+    .map((i) => state.candidates[i]?.modelId)
+    .filter((v): v is string => Boolean(v));
+  const ids = named.length >= 2
+    ? named
+    : ordinalIds.length >= 2
+      ? ordinalIds
+      : state.candidates.slice(0, 3).map((c) => c.modelId);
 
   const res = await compareCars(ids);
   if (!res.ok || !res.data) {
@@ -275,38 +291,64 @@ async function reviewsNode(state: State) {
 
 // ---------- 9. 节点：预约（Human-in-the-loop） ----------
 async function confirmNode(state: State) {
+  const cars = await getAllCars();
   const last = state.messages.at(-1)?.content ?? "";
-  const named = matchModelIds(last);
-  const modelId = named[0] ?? state.candidates[0]?.modelId ?? "";
+  const named = matchModelIds(last, cars);
+  const ordinalPick = state.ordinal?.length ? state.candidates[state.ordinal[0]] : undefined;
+  const modelId = named[0] ?? ordinalPick?.modelId ?? state.candidates[0]?.modelId ?? "";
   if (!modelId) return { answer: "还没有候选车型，先让我帮你选几款吧。", stage: "done" as Stage };
 
-  const cars = await getAllCars();
   const car = cars.find((c) => c.id === modelId);
   const city = state.constraints.city || "北京";
+  const carName = `${car?.brand ?? ""} ${car?.series ?? ""}`.trim();
 
-  // ⭐ 关键：interrupt 会暂停图执行，把问题返回给前端；
-  // 用户回复后，用 Command({ resume }) 从断点继续（状态由 checkpointer 保存）。
-  const confirmReply = interrupt({
-    type: "confirm",
-    question: `确认预约「${car?.brand ?? ""} ${car?.series ?? ""}」在${city}的试驾吗？回复「确认」继续，回复其他内容取消。`,
-  });
-
-  if (!/确认|是|好|可以|行/.test(String(confirmReply))) {
-    return { answer: "已取消预约。", stage: "done" as Stage };
+  // ⭐ 确认阶段：最多问 2 次，模棱两可绝不默认执行
+  let decision: "confirm" | "cancel" | "ambiguous" = "ambiguous";
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const question =
+      attempt === 0
+        ? `确认预约「${carName}」在${city}的试驾吗？请回复「确认」或「取消」。`
+        : `我没有识别到明确意图。请回复「确认」预约「${carName}」试驾，或回复「取消」。`;
+    const reply = interrupt({ type: "confirm", question });
+    decision = parseConfirmDecision(reply);
+    if (decision !== "ambiguous") break;
   }
 
-  const phoneReply = interrupt({
-    type: "phone",
-    question: "请提供手机号（仅用于本次预约；演示环境可输入任意 11 位手机号）。",
-  });
+  if (decision !== "confirm") {
+    return {
+      answer: decision === "cancel" ? "已取消预约。" : "没有收到明确确认，已取消本次预约。",
+      stage: "done" as Stage,
+    };
+  }
 
-  const phone = String(phoneReply).replace(/\D/g, "");
+  // ⭐ 手机号阶段：最多问 2 次，格式不对就重问
+  let phone = "";
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const reply = interrupt({
+      type: "phone",
+      question:
+        attempt === 0
+          ? "请提供手机号（仅用于本次预约；演示环境可输入任意 11 位手机号）。"
+          : "手机号格式不正确，请重新输入 11 位手机号。",
+    });
+    const digits = String(reply ?? "").replace(/\D/g, "");
+    if (isValidPhone(digits)) {
+      phone = digits;
+      break;
+    }
+  }
+
+  if (!phone) {
+    return { answer: "手机号无效，已取消预约。", stage: "done" as Stage };
+  }
+
   const res = await createTestDriveLead({
     sessionId: state.sessionId,
+    userId: state.userId,
     modelId,
     city,
     phone,
-    confirmed: true, // 服务端强制校验，不信任前端
+    confirmed: true, // 服务端强制校验
   });
 
   return {

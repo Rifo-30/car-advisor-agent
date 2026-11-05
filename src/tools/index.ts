@@ -181,11 +181,12 @@ export async function searchReviews(modelId: string, topic: string): Promise<Too
 
 export async function createTestDriveLead(args: {
   sessionId: string;
+  userId?: string;
   modelId: string;
   city: string;
   phone: string;
   confirmed: boolean;
-}): Promise<ToolResult<{ maskedPhone: string }>> {
+}): Promise<ToolResult<{ maskedPhone: string; duplicated?: boolean }>> {
   // 关键：服务端强制校验 confirmed，绝不信任模型/前端的"已确认"
   if (!args.confirmed) {
     return { ok: false, summary: "未确认，不能提交预约", error: "NOT_CONFIRMED" };
@@ -194,17 +195,29 @@ export async function createTestDriveLead(args: {
     return { ok: false, summary: "手机号格式不正确", error: "INVALID_PHONE" };
   }
 
-  await insertLead({
+  const phoneEnc = hashPhone(args.phone);
+  // ⭐ 幂等键：同一会话 + 同一车型 + 同一手机号，重复提交只落一条
+  const idempotencyKey = hashPhone(`${args.sessionId}:${args.modelId}:${phoneEnc}`);
+
+  const { inserted, error } = await insertLead({
     sessionId: args.sessionId,
+    userId: args.userId ?? "anonymous",
     modelId: args.modelId,
     city: args.city,
-    phoneEnc: hashPhone(args.phone),
+    phoneEnc,
+    idempotencyKey,
   });
+
+  if (error) {
+    return { ok: false, summary: `预约提交失败：${error}`, error: "INSERT_FAILED" };
+  }
 
   return {
     ok: true,
-    summary: `已提交 ${args.city} 试驾预约，预计 2 小时内经销商联系`,
-    data: { maskedPhone: maskPhone(args.phone) },
+    summary: inserted
+      ? `已提交 ${args.city} 试驾预约，预计 2 小时内经销商联系`
+      : `该预约已提交过，无需重复提交（${args.city}）`,
+    data: { maskedPhone: maskPhone(args.phone), duplicated: !inserted },
   };
 }
 

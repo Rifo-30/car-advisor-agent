@@ -47,7 +47,7 @@ export async function retrieveReviews(modelId: string, topic: string, topK = 3):
         model: "text-embedding-3-small",
         input: topic,
       });
-      const vectorHits = await searchReviewsVector(emb.data[0].embedding, topK);
+      const vectorHits = await searchReviewsVector(modelId, emb.data[0].embedding, topK);
       if (vectorHits.length) return vectorHits;
     } catch (err) {
       console.warn("[rag] 向量检索失败，回退关键词:", (err as Error).message);

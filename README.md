@@ -318,3 +318,53 @@ agent.turn
 
 **已知限制**：trace 存在进程内存（最多 200 条），重启即清空。
 需要跨重启保留时可接 Langfuse，或将 trace 表持久化到 Postgres。
+
+---
+
+## 12. 安全、测试与限流（P0/P1 加固）
+
+### 身份与越权（Demo 级）
+
+前端在 localStorage 生成 `userId`，所有请求带 `x-user-id` 头：
+
+- `GET /api/session/:id`：只有会话所有者可读，否则 **403**
+- `GET /api/sessions`：只返回当前用户的会话
+- `POST /api/leads`：缺少身份返回 **401**
+- `POST /api/chat`：按用户限流 **20 次/分钟**，超限返回 **429**
+
+> 这是演示级身份（无密码/无 JWT）。生产应替换为登录态 + JWT/Session + 行级权限。
+
+### 预约幂等
+
+`leads` 表新增 `idempotency_key` 唯一索引。同一「会话 + 车型 + 手机号」重复提交只落一条：
+
+```json
+{ "ok": true, "summary": "该预约已提交过，无需重复提交（北京）", "data": { "duplicated": true } }
+```
+
+### 确认意图解析
+
+`src/agent/confirm.ts` 采用 **否定优先 + 模棱两可重问**：
+
+| 输入 | 结果 |
+| --- | --- |
+| 确认 / 好的 / 可以 / OK | confirm |
+| **不好 / 不行 / 取消 / 确认取消** | cancel |
+| 不确定 / 随便 / 再看看 | ambiguous（重新询问，绝不默认执行） |
+
+### 测试
+
+```bash
+pnpm typecheck   # tsc --noEmit
+pnpm test        # 31 个单元测试（node:test）
+pnpm eval        # 23 条端到端评测
+```
+
+### Trace 持久化
+
+trace 现在同时写入 Postgres `traces` 表，**重启后仍可查询**：
+
+```bash
+curl http://localhost:3000/api/trace/<traceId>
+curl "http://localhost:3000/api/traces?limit=10"
+```

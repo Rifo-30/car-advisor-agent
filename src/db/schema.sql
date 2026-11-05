@@ -48,14 +48,23 @@ CREATE TABLE IF NOT EXISTS car_reviews (
 
 -- 试驾线索（手机号加密存储）
 CREATE TABLE IF NOT EXISTS leads (
-  id          BIGSERIAL PRIMARY KEY,
-  session_id  TEXT,
-  model_id    TEXT,
-  city        TEXT,
-  phone_enc   TEXT,
-  status      TEXT DEFAULT 'pending',
-  created_at  TIMESTAMPTZ DEFAULT now()
+  id              BIGSERIAL PRIMARY KEY,
+  session_id      TEXT,
+  user_id         TEXT,
+  model_id        TEXT,
+  city            TEXT,
+  phone_enc       TEXT,
+  idempotency_key TEXT,
+  status          TEXT DEFAULT 'pending',
+  created_at      TIMESTAMPTZ DEFAULT now()
 );
+
+-- 兼容已存在的表
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS user_id TEXT;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+DROP INDEX IF EXISTS leads_idempotency_idx;
+-- 完整唯一索引：NULL 在 Postgres 中互不冲突，可安全允许多条空值
+CREATE UNIQUE INDEX IF NOT EXISTS leads_idempotency_uniq ON leads (idempotency_key);
 
 -- 会话（Redis 不可用时的持久化兜底）
 CREATE TABLE IF NOT EXISTS sessions (
@@ -69,3 +78,19 @@ CREATE INDEX IF NOT EXISTS car_reviews_embedding_idx
   ON car_reviews USING hnsw (embedding vector_cosine_ops);
 
 CREATE INDEX IF NOT EXISTS car_reviews_model_idx ON car_reviews(model_id);
+
+-- 本地 trace 持久化（重启不丢）
+CREATE TABLE IF NOT EXISTS traces (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  session_id  TEXT,
+  input       JSONB,
+  output      JSONB,
+  start_ms    BIGINT,
+  duration_ms INT,
+  spans       JSONB DEFAULT '[]'::jsonb,
+  updated_at  TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS traces_session_idx ON traces (session_id);
+CREATE INDEX IF NOT EXISTS traces_updated_idx ON traces (updated_at DESC);
