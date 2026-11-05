@@ -2,7 +2,7 @@
 // 工具层（Function Calling 的「真实实现」）
 // 面试要点：LLM 只负责决定调用哪个工具，真正执行与鉴权在这里。
 // ============================================================
-import type { Candidate, CarModel, Comparison, EnergyType, Review } from "../types";
+import type { Candidate, CarModel, Comparison, EnergyType, Review, Variant } from "../types";
 import { getAllCars } from "../db/repo";
 import { insertLead } from "../db/repo";
 import { retrieveReviews } from "../rag/retriever";
@@ -27,14 +27,7 @@ export interface SearchArgs {
   limit?: number;
 }
 
-function pickVariant(car: CarModel, min: number, max: number) {
-  const inRange = car.variants
-    .filter((v) => v.guidePrice >= min && v.guidePrice <= max)
-    .sort((a, b) => a.guidePrice - b.guidePrice);
-  return inRange[0] ?? car.variants.slice().sort((a, b) => a.guidePrice - b.guidePrice)[0];
-}
-
-function buildWhy(car: CarModel, variant: ReturnType<typeof pickVariant>, usage: string[] | undefined): string[] {
+function buildWhy(car: CarModel, variant: Variant, usage: string[] | undefined): string[] {
   const why: string[] = [`预算内：${variant.name} ${variant.guidePrice.toFixed(2)} 万`];
   if (usage?.length) {
     const hit = car.tags.filter((t) => usage.some((u) => t.includes(u) || u.includes(t)));
@@ -47,7 +40,7 @@ function buildWhy(car: CarModel, variant: ReturnType<typeof pickVariant>, usage:
   return why.slice(0, 4);
 }
 
-function buildTradeoffs(car: CarModel, variant: ReturnType<typeof pickVariant>): string[] {
+function buildTradeoffs(car: CarModel, variant: Variant): string[] {
   const t: string[] = [];
   if (variant.fuelConsumption && variant.fuelConsumption >= 8) t.push(`油耗偏高（${variant.fuelConsumption}L/100km）`);
   if (car.energyType === "纯电" && (variant.rangeKm ?? 0) < 450) t.push("续航偏短，长途需规划充电");

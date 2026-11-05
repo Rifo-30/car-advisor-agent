@@ -361,7 +361,7 @@ async function confirmNode(state: State) {
 }
 
 // ---------- 9.5 节点：自我介绍 / 闲聊 ----------
-async function smalltalkNode(_state: State) {
+async function smalltalkNode() {
   const answer = [
     "我是 **懂车顾问**，一个专注选车决策的 AI 助手。",
     "",

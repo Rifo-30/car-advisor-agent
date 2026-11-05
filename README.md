@@ -368,3 +368,34 @@ trace 现在同时写入 Postgres `traces` 表，**重启后仍可查询**：
 curl http://localhost:3000/api/trace/<traceId>
 curl "http://localhost:3000/api/traces?limit=10"
 ```
+
+---
+
+## 13. 代码结构（前端已拆分）
+
+`components/Chat.tsx` 只负责状态与 SSE，展示拆成 5 个子组件：
+
+```
+components/
+├── Chat.tsx              # 主容器：状态 / SSE / 事件分发（356 行）
+└── chat/
+    ├── types.ts          # Message / Interrupt / Health / SessionSummary
+    ├── utils.ts          # uid / userId / 时间格式化 / Markdown 渲染
+    ├── Header.tsx        # 顶部状态徽章 + 历史/新对话/Trace 入口
+    ├── MessageItem.tsx   # 单条消息：工具时间线 / 卡片 / 对比表 / 引用 / 确认
+    ├── Composer.tsx      # 输入框与发送/停止
+    ├── TraceModal.tsx    # Trace 详情弹层
+    └── HistoryModal.tsx  # 历史会话弹层
+```
+
+## 14. 代码质量脚本
+
+```bash
+pnpm typecheck   # TypeScript 类型检查
+pnpm lint        # ESLint（0 errors）
+pnpm test        # 31 个单元测试
+pnpm eval        # 23 条端到端评测
+pnpm build       # 生产构建
+```
+
+> 说明：TypeScript 固定为 5.x（TypeScript 7 尚未被 `typescript-eslint` 支持）。
