@@ -84,7 +84,26 @@ export async function getAllReviews(modelId?: string): Promise<Review[]> {
   }
 }
 
-/** pgvector 语义检索（需要 DATABASE_URL + 已写入 embedding） */
+/** pgvector 语义检索（需要 DATABASE_URL + 已写入 embedding）
+ * 
+    * 用户问："云途 X3 口碑怎么样"
+    ↓
+    reviewsNode 调用 searchReviews(modelId, topic)
+    ↓
+    retrieveReviews() 调 OpenAI embeddings 生成查询向量
+    ↓
+    searchReviewsVector(modelId, embedding, 3)
+    ↓
+    执行这条 SQL：
+    ① 过滤 model_id = 'yt-x3'
+    ② 过滤 embedding IS NOT NULL
+    ③ 按余弦距离排序（HNSW 索引加速）
+    ④ 取 top 3
+    ↓
+    返回 3 条最相关的评测
+    ↓
+    reviewsNode 生成"优点/需要注意" + 引用
+ */
 export async function searchReviewsVector(
   modelId: string,
   embedding: number[],
@@ -102,6 +121,14 @@ export async function searchReviewsVector(
        LIMIT $3`,
       [JSON.stringify(embedding), modelId, topK]
     );
+    /**
+     * | 部分 | 含义 |
+      |---|---|
+      | `$1::vector` | 把参数 `$1`（字符串）**转成 pgvector 的 vector 类型** |
+      | `embedding <=> $1::vector` | **余弦距离**（cosine distance），范围 0~2 |
+      | `1 - 距离` | 转成**相似度**，范围 -1~1 |
+      | `AS similarity` | 起别名，返回结果里这个字段叫 `similarity` |
+     */
     return rows.map((r) => ({
       id: r.id, modelId: r.model_id, source: r.source, title: r.title,
       content: r.content, rating: Number(r.rating ?? 0), sentiment: r.sentiment,
@@ -146,7 +173,19 @@ export interface SessionSummary {
   updatedAt: string | null;
 }
 
-/** 历史会话列表：标题取第一条 user 消息 */
+/** 历史会话列表：标题取第一条 user 消息
+     * | 步骤 | 代码 | 作用 |
+    |---|---|---|
+    | **1** | `state->'messages'` | 取 JSONB 里的 `messages` 字段（是数组） |
+    | **2** | `COALESCE(..., '[]'::jsonb)` | 如果没有 `messages`，用空数组 `[]` 兜底 |
+    | **3** | `jsonb_array_elements(...)` | **把数组展开成多行**（一行一个元素） |
+    | **4** | `WITH ORDINALITY AS t(m, ord)` | 给每行编号：`m` = 元素，`ord` = 序号（1,2,3...） |
+    | **5** | `WHERE m->>'role' = 'user'` | 只保留 `role = "user"` 的行 |
+    | **6** | `ORDER BY ord` | 按原始顺序排（保证是"第一条"） |
+    | **7** | `LIMIT 1` | 只取第一条 |
+    | **8** | `m->>'content'` | 取这一行的 `content` 字段（文本） |
+    | **9** | 外层 `COALESCE(..., '(空会话)')` | 如果子查询没结果（没有 user 消息），返回 `(空会话)` |
+ */
 export async function listSessions(limit = 50, userId?: string): Promise<SessionSummary[]> {
   await ensureSchema();
   const p = getPool();
@@ -202,6 +241,7 @@ export async function saveSessionState(sessionId: string, state: unknown): Promi
   const p = getPool();
   if (!p) return;
   try {
+    // EXCLUDED 引用的永远是"真正要插入的那一行的最终值"，而 $2 只是"原始参数"。代表要插入的最新行的数据
     await p.query(
       `INSERT INTO sessions (id, state, updated_at) VALUES ($1, $2, now())
        ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, updated_at = now()`,

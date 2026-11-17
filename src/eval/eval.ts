@@ -54,7 +54,7 @@ const cases: Case[] = [
   { id: "bok-01", category: "预约", steps: ["15万左右，家用", "预约试驾"], expect: { hasInterrupted: true } },
   {
     id: "bok-02", category: "预约",
-    steps: ["15万左右，家用", "预约试驾"],
+    steps: ["15万左右，家用", "预约试驾1"],
     resumes: ["确认", "13800138000"],
     expect: { contains: "预约" },
   },

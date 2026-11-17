@@ -30,6 +30,8 @@ export interface TurnResult {
   mode: "live" | "mock";
   /** 自我介绍等固定文案不走 LLM 润色，避免被改写 */
   skipPolish?: boolean;
+  /** 意图来源：rule（纯规则）/ hybrid（规则 + 模型补充） */
+  intentSource?: string;
 }
 
 export async function runAdvisorTurn(input: TurnInput): Promise<TurnResult> {
@@ -146,6 +148,7 @@ export async function runAdvisorTurn(input: TurnInput): Promise<TurnResult> {
     stage: result.stage,
     answerLength: guarded.text.length,
     guardrailWarnings: guarded.warnings,
+    intentSource: result.intentSource ?? "rule",
   });
 
   return {
@@ -159,6 +162,7 @@ export async function runAdvisorTurn(input: TurnInput): Promise<TurnResult> {
     stage: result.stage ?? "recommend",
     mode: hasLLM() ? "live" : "mock",
     skipPolish: result.intent === "smalltalk",
+    intentSource: result.intentSource ?? "rule",
   };
 }
 

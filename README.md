@@ -399,3 +399,62 @@ pnpm build       # 生产构建
 ```
 
 > 说明：TypeScript 固定为 5.x（TypeScript 7 尚未被 `typescript-eslint` 支持）。
+
+---
+
+## 15. 规则 + 模型混合的意图解析
+
+规则正则覆盖不全（例如「带娃推荐什么车」里的「带娃」不在词表里），所以在规则层之上加了一层**模型补充**。
+
+### 执行流程
+
+```
+用户输入
+  ↓
+① 规则层（intent.ts 的 parseMessage）—— 快、免费、可控
+  ↓
+② needsModelFallback() 判断是否需要补充
+   - intent = unknown
+   - 或 intent = recommend 但没解析到任何上下文标签
+  ↓ 需要
+③ 模型层（intentModel.ts）—— 只做结构化抽取，输出 JSON
+  ↓
+④ 校验层 —— intent 白名单、energy/bodyType/usage 枚举、预算范围、置信度 ≥ 0.6
+  ↓
+⑤ 合并层（mergeIntent.ts）—— 规则优先，模型只补缺
+  ↓
+⑥ 输出 intent + constraints（并记录 intentSource = rule / hybrid）
+```
+
+### 合并原则
+
+| 字段 | 规则 |
+| --- | --- |
+| `intent` | 规则有明确值就用规则；规则 unknown 才用模型 |
+| `constraints` | 同名常量/数组字段以规则为准，模型只补规则没解析出的字段 |
+| 冲突 | 以规则为准，同时打印冲突日志（用于后续补规则） |
+
+### 降级策略
+
+| 情况 | 行为 |
+| --- | --- |
+| 未配置 `OPENAI_API_KEY` | 完全跳过模型，只用规则 |
+| `INTENT_MODEL_ENABLED=false` | 强制关闭模型补充 |
+| 模型超时（默认 4s） | 返回 null，用规则结果 |
+| 输出非 JSON / 校验不过 / 置信度低 | 返回 null，用规则结果 |
+
+### 可观测
+
+- `trace.end()` 的 output 里记录 `intentSource: "rule" | "hybrid"`
+- 规则与模型冲突时打印 `[intent] 规则与模型冲突（已按规则优先）: ...`
+
+### 实测效果
+
+```text
+用户："带娃推荐什么车"
+
+规则层： intent=recommend, constraints={}          ← 没识别到「带娃」
+是否需要补充： true
+模型层： { intent:"recommend", constraints:{ usage:["家用","空间"] }, confidence:0.62 }
+合并结果： usage = ["家用","空间"], adopted = true
+```

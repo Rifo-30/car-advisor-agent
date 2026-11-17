@@ -19,18 +19,23 @@ import {
 import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 import type { Candidate, ChatMessage, Citation, Comparison, Constraints, Stage, ToolEvent } from "../types";
 import { randomUUID } from "node:crypto";
-import { parseMessage, matchModelIds } from "./intent";
+import { parseMessage, matchModelIds, needsModelFallback } from "./intent";
+import { extractIntentWithModel } from "./intentModel";
+import { mergeIntent } from "./mergeIntent";
 import { parseConfirmDecision } from "./confirm";
 import { isValidPhone } from "../guardrails/guard";
 import { searchCars, compareCars, estimatePrice, searchReviews, createTestDriveLead } from "../tools/index";
 import { getAllCars } from "../db/repo";
 
 // ---------- 1. 定义状态 ----------
+/**
+ * _a 是旧值，下划线前缀表示"故意不用"（ESLint 约定，避免"未使用变量"警告）
+ */
 const AdvisorState = Annotation.Root({
   sessionId: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }),
   userId: Annotation<string>({ reducer: (_a, b) => b, default: () => "anonymous" }),
-  ordinal: Annotation<number[]>({ reducer: (_a, b) => b, default: () => [] }),
-  turnId: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }),
+  ordinal: Annotation<number[]>({ reducer: (_a, b) => b, default: () => [] }), // "第几款"的下标数组，用于精确指定候选
+  turnId: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }), // 该轮唯一ID、用户展示这一轮的信息，比如筛选出这一轮的工具展示
   messages: Annotation<ChatMessage[]>({
     reducer: (a, b) => [...a, ...b],          // 消息只追加，不覆盖
     default: () => [],
@@ -40,10 +45,12 @@ const AdvisorState = Annotation.Root({
     default: () => ({}),
   }),
   intent: Annotation<string>({ reducer: (_a, b) => b, default: () => "unknown" }),
+  /** 意图来源：rule / hybrid（规则 + 模型补充） */
+  intentSource: Annotation<string>({ reducer: (_a, b) => b, default: () => "rule" }),
   stage: Annotation<Stage>({ reducer: (_a, b) => b, default: () => "clarify" }),
   candidates: Annotation<Candidate[]>({ reducer: (_a, b) => b, default: () => [] }),
   comparison: Annotation<Comparison | null>({ reducer: (_a, b) => b, default: () => null }),
-  citations: Annotation<Citation[]>({ reducer: (_a, b) => b, default: () => [] }),
+  citations: Annotation<Citation[]>({ reducer: (_a, b) => b, default: () => [] }), // 本轮答案的来源（参数/口碑），用于溯源和防幻觉
   answer: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }),
   toolEvents: Annotation<ToolEvent[]>({
     reducer: (a, b) => [...a, ...b],          // 工具调用记录累积，便于前端展示
@@ -56,15 +63,45 @@ type State = typeof AdvisorState.State;
 // ---------- 2. 节点：分类 ----------
 async function classifyNode(state: State) {
   const last = state.messages[state.messages.length - 1];
+  const text = last?.content ?? "";
   // ⭐ 用数据库里的车型做名称匹配，避免静态数据与库不一致
   const cars = await getAllCars();
-  const parsed = parseMessage(last?.content ?? "", state.candidates, cars);
+  const parsed = parseMessage(text, state.candidates, cars);
+
+  // ⭐ 规则 + 模型混合：
+  //   规则能确定 → 直接用（0 额外成本）
+  //   规则不确定 → 调模型做结构化抽取 → 校验 → 规则优先合并
+  let intent: string = parsed.intent;
+  let constraints = parsed.constraints;
+  let intentSource = "rule";
+
+  if (needsModelFallback(parsed)) {
+    const modelResult = await extractIntentWithModel(text, {
+      intent: parsed.intent,
+      constraints: parsed.constraints,
+    });
+
+    if (modelResult) {
+      const merged = mergeIntent(
+        { intent: parsed.intent, constraints: parsed.constraints },
+        modelResult
+      );
+      intent = merged.intent;
+      constraints = merged.constraints;
+      intentSource = merged.adopted ? "hybrid" : "rule";
+
+      if (merged.conflicts.length) {
+        console.warn("[intent] 规则与模型冲突（已按规则优先）:", merged.conflicts.join("; "));
+      }
+    }
+  }
 
   return {
     turnId: randomUUID(),   // 每轮唯一 ID：前端只展示本轮工具事件
-    intent: parsed.intent,
-    constraints: { ...state.constraints, ...parsed.constraints },
+    intent,
+    constraints: { ...state.constraints, ...constraints },
     ordinal: parsed.ordinal ?? [],
+    intentSource,
     stage: "clarify" as Stage,
   };
 }

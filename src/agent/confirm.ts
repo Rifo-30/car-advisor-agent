@@ -10,7 +10,7 @@ const AMBIGUOUS = /(不确定|不清楚|再看看|再想想|考虑一下|等等|
 // 否定 / 取消（必须先于肯定判断）
 const CANCEL = /(不|别|取消|算了|不要|不用|不行|不好|停|关闭|先不|\bno\b|\bnope\b)/i;
 // 肯定 / 确认
-const CONFIRM = /(确认|确定|是的|好的|可以|没问题|同意|对的|行|ok|okay|嗯)/i;
+const CONFIRM = /(确认|确定|是的|好的|可以|没问题|同意|对的|行|ok|okay|嗯|好)/i;
 
 export function parseConfirmDecision(input: unknown): ConfirmDecision {
   const text = String(input ?? "").trim();

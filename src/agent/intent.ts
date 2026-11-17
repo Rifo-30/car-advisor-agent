@@ -135,3 +135,18 @@ export function parseMessage(text: string, candidates: Candidate[], cars: CarMod
 
   return { intent, constraints, modelIds, ordinal: ordinal.length ? ordinal : undefined };
 }
+
+/**
+ * 判断是否需要调用模型补充：
+ * - 意图完全不明（unknown）
+ * - 是"推荐"类意图，但一个上下文标签都没解析到（例如"带娃推荐什么车"）
+ *
+ * 只在"规则不确定"时触发，控制模型调用比例，避免每次都多花一次请求。
+ */
+export function needsModelFallback(parsed: ParsedMessage): boolean {
+  if (parsed.intent === "unknown") return true;
+  if (parsed.intent !== "recommend") return false;
+  const c = parsed.constraints;
+  const noContext = !c.usage?.length && !c.energy?.length && !c.bodyType?.length && !c.charging;
+  return noContext;
+}
