@@ -83,7 +83,7 @@ async function classifyNode(state: State) {
 
     if (modelResult) {
       const merged = mergeIntent(
-        { intent: parsed.intent, constraints: parsed.constraints },
+        { intent: parsed.intent, constraints: parsed.constraints, weakIntent: parsed.weakIntent },
         modelResult
       );
       intent = merged.intent;

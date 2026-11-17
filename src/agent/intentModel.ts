@@ -119,9 +119,10 @@ const SYSTEM_PROMPT = `你是选车助手的意图抽取器。只输出 JSON，�
 1. 只抽取文本中明确或强烈暗示的信息，不要编造。
 2. "带娃 / 遛娃 / 孩子 / 宝宝 / 二胎 / 接娃" 暗示 usage 包含 家用、空间。
 3. "跑长途 / 回老家 / 自驾" 暗示 usage 包含 长途。
-4. 没提到的字段不要输出。
-5. 完全无法判断意图时，intent 用 "clarify"。
-6. 如果文本里给了"十几万""二十以内"这类模糊预算，给出你理解的区间并降低 confidence。`;
+4. "去比较远的地方 / 出远门" 暗示 usage 包含 长途；这里的"比较"是程度副词，不是对比车型。
+5. 没提到的字段不要输出。
+6. 完全无法判断意图时，intent 用 "clarify"。
+7. 如果文本里给了"十几万""二十以内"这类模糊预算，给出你理解的区间并降低 confidence。`;
 
 function buildHumanMessage(text: string, current: { intent: string; constraints: Constraints }): string {
   return [

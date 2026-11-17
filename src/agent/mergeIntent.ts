@@ -12,6 +12,8 @@ import type { ModelIntentResult } from "./intentModel";
 export interface RuleIntent {
   intent: string;
   constraints: Constraints;
+  /** 规则意图是否"证据不足"（弱匹配），为 true 时允许模型覆盖 intent */
+  weakIntent?: boolean;
 }
 
 export interface MergeResult {
@@ -35,13 +37,16 @@ export function mergeIntent(rule: RuleIntent, model: ModelIntentResult | null): 
 
   // ---------- 1. intent ----------
   let intent = rule.intent;
-  if (rule.intent === "unknown" && model.intent !== "unknown") {
+  const ruleIntentWeak = rule.intent === "unknown" || Boolean(rule.weakIntent);
+
+  if (ruleIntentWeak && model.intent !== "unknown") {
+    // 规则意图不可靠（未知 / 弱匹配）→ 采用模型判断
+    if (model.intent !== rule.intent) {
+      conflicts.push(`intent: 弱匹配被模型覆盖 规则=${rule.intent} 模型=${model.intent}`);
+    }
     intent = model.intent;
-  } else if (
-    rule.intent !== "unknown" &&
-    model.intent !== rule.intent &&
-    model.intent !== "clarify"   // 模型说"不确定"不算冲突
-  ) {
+  } else if (model.intent !== rule.intent && model.intent !== "clarify") {
+    // 规则意图明确 → 以规则为准，记录冲突
     conflicts.push(`intent: 规则=${rule.intent} 模型=${model.intent}`);
   }
 

@@ -21,6 +21,8 @@ export interface ParsedMessage {
   constraints: Constraints;
   modelIds: string[];
   ordinal?: number[];
+  /** 弱意图：命中了意图关键词但证据不足（如只说"比较"却没点名车型），允许模型覆盖 */
+  weakIntent?: boolean;
 }
 
 const CITY_LIST = ["北京", "上海", "广州", "深圳", "杭州", "成都", "武汉", "南京", "西安", "重庆", "苏州", "天津"];
@@ -101,7 +103,8 @@ export function parseMessage(text: string, candidates: Candidate[], cars: CarMod
   // 顺序很重要：寒暄 > 预约 > 对比 > 价格 > 口碑 > 推荐
   if (identity.test(text) || greeting.test(text) || thanks.test(text)) intent = "smalltalk";
   else if (/试驾|预约|到店|看车/.test(text)) intent = "book";
-  else if (/对比|比较|哪个好|差异|区别/.test(text)) intent = "compare";
+  // ⭐ 收紧对比意图：裸"比较"会误伤"比较远/比较贵/比较省油"，改成明确的对比表达
+  else if (/对比|差异|区别|哪个好|哪款好|哪个更|比较一下|比较下|比较这|比较那|相比/.test(text)) intent = "compare";
   else if (/落地|多少钱|价格|优惠|报价/.test(text)) intent = "price";
   else if (/口碑|评价|怎么样|缺点|优点|真实|吐槽/.test(text)) intent = "reviews";
   else if (/推荐|买|选|预算|家用|通勤|代步|万/.test(text)) intent = "recommend";
@@ -133,20 +136,51 @@ export function parseMessage(text: string, candidates: Candidate[], cars: CarMod
     ordinal.push(map[m[1]] ?? 0);
   }
 
-  return { intent, constraints, modelIds, ordinal: ordinal.length ? ordinal : undefined };
+  // ⭐ 弱意图判断：compare 但没有点名车型、没有候选、也没有序数引用
+  //    → 可能是"比较远的地方"这类误匹配，允许模型复核并覆盖
+  let weakIntent = false;
+  if (intent === "compare") {
+    const hasNamedModels = modelIds.length >= 2;
+    const hasOrdinalRef = /前两|这两|都对比|全部对比|第[一二三123]款/.test(text);
+    const hasCandidates = candidates.length > 0;
+    weakIntent = !hasNamedModels && !hasOrdinalRef && !hasCandidates;
+  }
+
+  return {
+    intent,
+    constraints,
+    modelIds,
+    ordinal: ordinal.length ? ordinal : undefined,
+    weakIntent: weakIntent || undefined,
+  };
 }
 
 /**
  * 判断是否需要调用模型补充：
  * - 意图完全不明（unknown）
- * - 是"推荐"类意图，但一个上下文标签都没解析到（例如"带娃推荐什么车"）
+ * - 规则意图是弱匹配（例如 compare 没点名车型、没有候选、没有序数引用）
+ * - 是选车类意图，但一个上下文标签都没解析到（例如"带娃推荐什么车"）
  *
  * 只在"规则不确定"时触发，控制模型调用比例，避免每次都多花一次请求。
  */
 export function needsModelFallback(parsed: ParsedMessage): boolean {
+  // 1) 完全没识别出意图
   if (parsed.intent === "unknown") return true;
-  if (parsed.intent !== "recommend") return false;
+
+  // 2) 弱意图（如只命中"比较"但没点名车型）→ 让模型复核
+  if (parsed.weakIntent) return true;
+
+  // 3) 选车类意图，但一个上下文约束都没解析到 → 可能识别错了
+  const selectLike = ["recommend", "compare", "price", "reviews"];
+  if (!selectLike.includes(parsed.intent)) return false;
+
   const c = parsed.constraints;
-  const noContext = !c.usage?.length && !c.energy?.length && !c.bodyType?.length && !c.charging;
+  const noContext =
+    !c.usage?.length &&
+    !c.energy?.length &&
+    !c.bodyType?.length &&
+    !c.charging &&
+    c.budgetMin == null;
+
   return noContext;
 }

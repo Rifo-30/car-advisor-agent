@@ -122,7 +122,7 @@ src/
   cache/redis.ts           Redis 缓存 + 内存降级
   observability/trace.ts   Langfuse + 本地 trace
   guardrails/guard.ts      ⭐ 广告法 / PII / 注入检测
-  eval/eval.ts             ⭐ 20 条评测用例
+  eval/eval.ts             ⭐ 23 条评测用例
 ```
 
 ---
@@ -209,14 +209,14 @@ const phoneReply = interrupt({ type: "phone", question: "请提供手机号" });
 1. **全链路**：Next.js 前端 → API → LangGraph 编排 → 工具 → RAG → 数据层 → 可观测。
 2. **可解释推荐**：每款车给出"为什么推荐 + 短板"，且可追溯到结构化字段。
 3. **真实 HITL**：`interrupt()` + Checkpointer 实现"确认 → 手机号 → 提交"的暂停恢复。
-4. **工程化**：20 条评测集（100% 通过）、trace、SSE、注入/广告法护栏。
+4. **工程化**：23 条评测集（100% 通过）、trace、SSE、注入/广告法护栏。
 5. **可降级**：无 Key、无数据库都能跑，适合演示与面试现场。
 
 ### 面试讲法（60 秒版）
 
 > 我做了一个汽车垂类的选车决策 Agent。核心判断是：**LLM 不能作为事实来源**。所以车型参数和价格全部走结构化数据，LLM 只负责理解需求和表达。
 > 编排用 LangGraph，把"澄清→筛选→推荐→对比→报价→预约"做成状态机；预约环节用 `interrupt()` 实现人工确认，`Command(resume)` 从 checkpoint 恢复。
-> 工程上配了 20 条评测集做回归，接了 trace 看每一步工具调用，并做了广告法、注入、PII 三层护栏。
+> 工程上配了 23 条评测集做回归，接了 trace 看每一步工具调用，并做了广告法、注入、PII 三层护栏。
 > 外部依赖全部可降级：没有 Key 也能完整演示。
 
 ---
@@ -356,7 +356,7 @@ agent.turn
 
 ```bash
 pnpm typecheck   # tsc --noEmit
-pnpm test        # 31 个单元测试（node:test）
+pnpm test        # 46 个单元测试（node:test）
 pnpm eval        # 23 条端到端评测
 ```
 
@@ -393,7 +393,7 @@ components/
 ```bash
 pnpm typecheck   # TypeScript 类型检查
 pnpm lint        # ESLint（0 errors）
-pnpm test        # 31 个单元测试
+pnpm test        # 46 个单元测试
 pnpm eval        # 23 条端到端评测
 pnpm build       # 生产构建
 ```
@@ -415,7 +415,8 @@ pnpm build       # 生产构建
   ↓
 ② needsModelFallback() 判断是否需要补充
    - intent = unknown
-   - 或 intent = recommend 但没解析到任何上下文标签
+   - 或意图是弱匹配（例如命中 compare，但没点名车型、没有候选、没有序数引用）
+   - 或 recommend / compare / price / reviews 但没解析到任何上下文标签
   ↓ 需要
 ③ 模型层（intentModel.ts）—— 只做结构化抽取，输出 JSON
   ↓
@@ -430,9 +431,29 @@ pnpm build       # 生产构建
 
 | 字段 | 规则 |
 | --- | --- |
-| `intent` | 规则有明确值就用规则；规则 unknown 才用模型 |
+| `intent` | 规则明确时优先；规则 unknown 或弱匹配时采用模型判断 |
 | `constraints` | 同名常量/数组字段以规则为准，模型只补规则没解析出的字段 |
-| 冲突 | 以规则为准，同时打印冲突日志（用于后续补规则） |
+| 冲突 | 强匹配以规则为准，同时打印冲突日志；弱匹配允许模型覆盖 |
+
+### 为什么需要 `weakIntent`
+
+最初 compare 的正则包含裸关键词「比较」，导致：
+
+```text
+"我要去比较远的地方，推荐什么车"
+→ 规则命中「比较」
+→ intent 被误判为 compare
+→ 且不会触发模型复核
+→ 走对比流程，要求澄清车型
+```
+
+修复分三层：
+
+1. 收紧 compare 正则，去掉裸「比较」，只保留「比较一下 / 比较这两款 / 对比 / 差异」等明确表达。
+2. 新增 `weakIntent`：compare 没点名车型、没有候选、没有序数引用时视为证据不足。
+3. `needsModelFallback()` 对弱意图触发模型复核，`mergeIntent()` 允许模型覆盖弱意图。
+
+另外在模型抽取提示词中明确：`"去比较远的地方"` 表示 `usage = ["长途"]`，不是对比车型。
 
 ### 降级策略
 

@@ -45,6 +45,17 @@ test("模型为空时原样返回规则结果", () => {
   assert.equal(r.conflicts.length, 0);
 });
 
+test("弱 compare 允许模型覆盖，并保留模型补充的约束", () => {
+  const r = mergeIntent(
+    { intent: "compare", constraints: {}, weakIntent: true },
+    { intent: "recommend", constraints: { usage: ["长途"] }, confidence: 0.9 }
+  );
+  assert.equal(r.intent, "recommend");
+  assert.deepEqual(r.constraints.usage, ["长途"]);
+  assert.equal(r.adopted, true);
+  assert.ok(r.conflicts.some((c) => c.includes("弱匹配被模型覆盖")));
+});
+
 // ---------------- validateModelIntent ----------------
 
 test("validateModelIntent 拒绝非法 intent", () => {
@@ -90,4 +101,22 @@ test("规则已识别上下文时不触发模型", () => {
 test("闲聊不触发模型", () => {
   const parsed = parseMessage("你好", [], CARS);
   assert.equal(needsModelFallback(parsed), false);
+});
+
+// ---------------- 意图误判回归 ----------------
+
+test("「比较远」不应被误判为对比意图", () => {
+  const parsed = parseMessage("我要去比较远的地方，推荐什么车", [], CARS);
+  assert.equal(parsed.intent, "recommend");
+  assert.equal(needsModelFallback(parsed), true); // 规则没识别到「长途」，需要模型补充
+});
+
+test("「比较贵」不应被误判为对比意图", () => {
+  const parsed = parseMessage("这车比较贵", [], CARS);
+  assert.notEqual(parsed.intent, "compare");
+});
+
+test("明确的对比表达仍然识别为 compare", () => {
+  assert.equal(parseMessage("对比这两款车", [], CARS).intent, "compare");
+  assert.equal(parseMessage("比较这两款车", [], CARS).intent, "compare");
 });
