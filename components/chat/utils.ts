@@ -34,6 +34,26 @@ export function toolLabel(name: string): string {
   return map[name] ?? name;
 }
 
+export function stageLabel(stage: string): string {
+  const map: Record<string, string> = {
+    classifying: "正在理解你的需求…",
+    clarifying: "正在确认还缺哪些信息…",
+    filtering: "正在筛选车型…",
+    comparing: "正在对比车型…",
+    quoting: "正在估算落地价…",
+    researching: "正在检索真实口碑…",
+    confirming: "正在准备预约信息…",
+    responding: "正在组织回答…",
+    resuming: "正在继续处理…",
+    recommend: "正在整理推荐结果…",
+    compare: "正在整理对比结果…",
+    quote: "正在整理报价结果…",
+    reviews: "正在整理口碑结果…",
+    generating: "正在组织最终回答…",
+  };
+  return map[stage] ?? "正在处理…";
+}
+
 export function formatTime(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);

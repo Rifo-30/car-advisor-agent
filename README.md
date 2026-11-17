@@ -192,15 +192,19 @@ const phoneReply = interrupt({ type: "phone", question: "请提供手机号" });
 | --- | --- | --- |
 | `session` | `{ sessionId }` | 绑定会话 |
 | `trace` | `{ traceId }` | 排障入口 |
-| `tool` | `{ name, summary, ms, ok }` | "正在筛选车型…" |
+| `tool` | `{ name, summary, ms, ok }` | 节点结束后显示工具调用时间线 |
 | `card` | `Candidate` | 车型卡片 |
 | `comparison` | `Comparison` | 对比表 |
 | `citation` | `Citation` | 来源引用 |
-| `stage` | `{ stage }` | 当前阶段 |
+| `stage` | `{ stage, label, node? }` | 实时显示"正在筛选车型…"等进度 |
 | `delta` | `{ text }` | 流式文本 |
 | `interrupt` | `{ type, question }` | 人工确认/输入手机号 |
 | `quickReplies` | `{ options }` | 推荐下一步 |
 | `done` | `{ mode, stage }` | 结束 |
+
+`stage` 使用 LangGraph 的 `streamMode: "tasks"` 在节点开始时发送；节点结束后的
+`tool` 事件再补充命中数量、耗时和执行状态。因此前端显示的是实际执行进度，
+不是图执行结束后补出来的伪进度。
 
 ---
 
@@ -356,7 +360,7 @@ agent.turn
 
 ```bash
 pnpm typecheck   # tsc --noEmit
-pnpm test        # 49 个单元测试（node:test）
+pnpm test        # 51 个单元测试（node:test）
 pnpm eval        # 24 条端到端评测
 ```
 
@@ -393,7 +397,7 @@ components/
 ```bash
 pnpm typecheck   # TypeScript 类型检查
 pnpm lint        # ESLint（0 errors）
-pnpm test        # 49 个单元测试
+pnpm test        # 51 个单元测试
 pnpm eval        # 24 条端到端评测
 pnpm build       # 生产构建
 ```

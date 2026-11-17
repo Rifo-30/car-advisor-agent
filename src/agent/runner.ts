@@ -34,7 +34,42 @@ export interface TurnResult {
   intentSource?: string;
 }
 
-export async function runAdvisorTurn(input: TurnInput): Promise<TurnResult> {
+export type TurnProgressEvent =
+  | { event: "stage"; stage: string; label: string; node?: string }
+  | { event: "tool"; tool: ToolEvent };
+
+export type TurnProgressHandler = (event: TurnProgressEvent) => void;
+
+const NODE_PROGRESS: Record<string, { stage: string; label: string }> = {
+  classify: { stage: "classifying", label: "正在理解你的需求…" },
+  clarify: { stage: "clarifying", label: "正在确认还缺哪些信息…" },
+  retrieve: { stage: "filtering", label: "正在筛选车型…" },
+  compare: { stage: "comparing", label: "正在对比车型…" },
+  quote: { stage: "quoting", label: "正在估算落地价…" },
+  reviews: { stage: "researching", label: "正在检索真实口碑…" },
+  confirm: { stage: "confirming", label: "正在准备预约信息…" },
+  smalltalk: { stage: "responding", label: "正在组织回答…" },
+};
+
+export function getNodeProgress(node: string): { stage: string; label: string } | null {
+  return NODE_PROGRESS[node] ?? null;
+}
+
+interface TaskStreamEvent {
+  id: string;
+  name: string;
+  input?: unknown;
+  result?: unknown;
+}
+
+function toolEventKey(event: ToolEvent): string {
+  return [event.turnId, event.name, event.summary, event.ms].join("|");
+}
+
+export async function runAdvisorTurn(
+  input: TurnInput,
+  onProgress?: TurnProgressHandler
+): Promise<TurnResult> {
   const graph = await getAdvisorGraph();
   const config = { configurable: { thread_id: input.sessionId } };
   const trace = startTrace("agent.turn", input.sessionId, {
@@ -58,7 +93,47 @@ export async function runAdvisorTurn(input: TurnInput): Promise<TurnResult> {
   // 说明：Command 的泛型与 StateGraph 推导存在类型摩擦，这里显式放宽类型
   let result: any;
   try {
-    result = await graph.invoke(graphInput as any, config as any);
+    // ⭐ 用 tasks 流模式观察每个节点的开始/结束，而不是等整张图执行完再假装有进度。
+    //    node 开始时发 stage，node 结束时把该节点产生的 toolEvents 实时发给前端。
+    const stream = await graph.stream(graphInput as any, {
+      ...config,
+      streamMode: "tasks",
+    } as any);
+    const emittedTools = new Set<string>();
+
+    for await (const raw of stream) {
+      const task = raw as TaskStreamEvent;
+      if ("input" in task) {
+        const progress = getNodeProgress(task.name);
+        if (progress) onProgress?.({ event: "stage", ...progress, node: task.name });
+        continue;
+      }
+
+      const updates: Array<[string, Record<string, unknown>]> = Array.isArray(task.result)
+        ? (task.result as Array<[string, Record<string, unknown>]>)
+        : task.result && typeof task.result === "object"
+          ? [[task.name, task.result as Record<string, unknown>]]
+          : [];
+
+      for (const [, update] of updates) {
+        const toolEvents = (update as { toolEvents?: ToolEvent[] }).toolEvents ?? [];
+        for (const toolEvent of toolEvents) {
+          const key = toolEventKey(toolEvent);
+          if (emittedTools.has(key)) continue;
+          emittedTools.add(key);
+          onProgress?.({ event: "tool", tool: toolEvent });
+        }
+      }
+    }
+
+    // stream 只负责进度；最终状态从 checkpoint 读取，保持与 invoke 相同的返回语义。
+    // 图停在 interrupt 时，snapshot.tasks 中会携带待恢复的中断信息。
+    const snapshot = await graph.getState(config as any);
+    const interrupts = snapshot.tasks.flatMap((task: { interrupts?: unknown[] }) => task.interrupts ?? []);
+    result = {
+      ...snapshot.values,
+      __interrupt__: interrupts.length ? interrupts : undefined,
+    };
   } catch (err) {
     // ⭐ 异常也要闭环：否则 span/trace 永远停在"未结束"状态
     const message = (err as Error).message;
@@ -66,7 +141,7 @@ export async function runAdvisorTurn(input: TurnInput): Promise<TurnResult> {
     trace.end({ error: message });
     throw err;
   }
-  span.end({ stage: result.stage, interrupted: Boolean(result.__interrupt__) });
+  span.end({ stage: result.stage, interrupted: Boolean(result.__interrupt__?.length) });
 
   // 本轮产生的工具事件（状态里的 toolEvents 是累积的，需要按 turnId 过滤）
   const turnEvents = (result.toolEvents ?? []).filter(

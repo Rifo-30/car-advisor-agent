@@ -114,6 +114,22 @@ body {
 .bubble strong { color: #1d4ed8; }
 .msg.user .bubble strong { color: #fff; }
 
+/* ---------- 执行进度 ---------- */
+.progress {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin: 0 0 9px; padding: 5px 10px;
+  border: 1px solid #bfdbfe; border-radius: 999px;
+  background: var(--brand-soft); color: #1d4ed8;
+  font-size: 12.5px; font-weight: 500;
+}
+.spinner {
+  width: 12px; height: 12px; flex: 0 0 auto;
+  border: 2px solid rgba(37, 99, 235, .22);
+  border-top-color: var(--brand); border-radius: 50%;
+  animation: spin .75s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* ---------- 工具调用时间线 ---------- */
 .tools {
   display: flex; flex-direction: column; gap: 6px;

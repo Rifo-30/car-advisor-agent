@@ -30,6 +30,13 @@ export default function MessageItem({
     <div className={`msg ${m.role}`}>
       <div className="avatar">{m.role === "user" ? "我" : "懂"}</div>
       <div className="bubble">
+        {m.streaming && m.progress && (
+          <div className="progress" role="status" aria-live="polite">
+            <span className="spinner" aria-hidden="true" />
+            <span>{m.progress.label}</span>
+          </div>
+        )}
+
         {m.toolEvents && m.toolEvents.length > 0 && (
           <div className="tools">
             {m.toolEvents.map((t, i) => (
@@ -43,7 +50,9 @@ export default function MessageItem({
           </div>
         )}
 
-        <div dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text || (m.streaming ? "…" : "")) }} />
+        {(m.text || !m.streaming) && (
+          <div dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />
+        )}
 
         {m.cards && m.cards.length > 0 && (
           <div className="cards">

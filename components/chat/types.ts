@@ -1,5 +1,11 @@
 import type { Candidate, Citation, Comparison, ToolEvent } from "@/src/types";
 
+export interface MessageProgress {
+  stage: string;
+  label: string;
+  node?: string;
+}
+
 export interface Message {
   id: string;
   role: "user" | "assistant";
@@ -9,6 +15,7 @@ export interface Message {
   cards?: Candidate[];
   comparison?: Comparison | null;
   citations?: Citation[];
+  progress?: MessageProgress;
 }
 
 export interface Interrupt {

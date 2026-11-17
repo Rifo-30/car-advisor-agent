@@ -9,6 +9,7 @@ import { streamAnswer } from "@/src/agent/llm";
 import { detectInjection, sanitizeInput } from "@/src/guardrails/guard";
 import { appendSpan, finishTrace } from "@/src/observability/trace";
 import { rateLimit } from "@/src/security/rateLimit";
+import type { ToolEvent } from "@/src/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,7 +53,31 @@ export async function POST(req: NextRequest) {
           return;
         }
 
-        const result = await runAdvisorTurn({ sessionId, userId, message, resume });
+        // ⭐ 在整张图开始前先给用户一个即时反馈；后续节点进度由 runner 实时推送
+        send("stage", { stage: "classifying", label: "正在理解你的需求…" });
+        let lastStage = "classifying";
+
+        const sentToolEvents = new Set<string>();
+        const sendTool = (tool: ToolEvent) => {
+          const key = [tool.turnId, tool.name, tool.summary, tool.ms].join("|");
+          if (sentToolEvents.has(key)) return;
+          sentToolEvents.add(key);
+          send("tool", tool);
+        };
+
+        const result = await runAdvisorTurn({ sessionId, userId, message, resume }, (progress) => {
+          if (progress.event === "stage") {
+            if (progress.stage === lastStage) return;
+            lastStage = progress.stage;
+            send("stage", {
+              stage: progress.stage,
+              label: progress.label,
+              node: progress.node,
+            });
+          } else {
+            sendTool(progress.tool);
+          }
+        });
         send("trace", { traceId: result.traceId });
 
         // 人机协同：图在 interrupt 处暂停
@@ -62,8 +87,8 @@ export async function POST(req: NextRequest) {
           return;
         }
 
-        // 过程可视化：工具调用 → 卡片 → 对比表 → 引用 → 阶段
-        for (const ev of result.toolEvents) send("tool", ev);
+        // 兜底补齐未通过流式回调发出的工具事件，同时保证不重复
+        for (const ev of result.toolEvents) sendTool(ev);
         for (const card of result.candidates) send("card", card);
         if (result.comparison) send("comparison", result.comparison);
         for (const citation of result.citations) send("citation", citation);
@@ -71,7 +96,7 @@ export async function POST(req: NextRequest) {
 
         // 答案流式输出（有 Key 走 LLM 润色，无 Key 走模板打字机）
         const factSheet = buildFactSheet(result);
-        send("stage", { stage: "generating" });
+        send("stage", { stage: "generating", label: "正在组织最终回答…" });
 
         // ⭐ 记录 LLM 润色这一步（发生在 graph 之后，需要单独补 span）
         const llmStart = Date.now();

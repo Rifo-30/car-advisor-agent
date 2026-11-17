@@ -7,7 +7,7 @@ import HistoryModal from "./chat/HistoryModal";
 import MessageItem from "./chat/MessageItem";
 import TraceModal from "./chat/TraceModal";
 import type { Health, Interrupt, Message, SessionSummary } from "./chat/types";
-import { getUserId, SAMPLES, uid } from "./chat/utils";
+import { getUserId, SAMPLES, stageLabel, uid } from "./chat/utils";
 
 export default function Chat() {
   // ---------- 会话与消息 ----------
@@ -142,6 +142,18 @@ export default function Chat() {
           case "tool":
             patch(assistantId, (m) => ({ ...m, toolEvents: [...(m.toolEvents ?? []), data] }));
             break;
+          case "stage": {
+            const stage = String(data.stage ?? "");
+            patch(assistantId, (m) => ({
+              ...m,
+              progress: {
+                stage,
+                label: String(data.label ?? stageLabel(stage)),
+                node: data.node,
+              },
+            }));
+            break;
+          }
           case "card":
             patch(assistantId, (m) => ({ ...m, cards: [...(m.cards ?? []), data] }));
             break;
@@ -167,7 +179,7 @@ export default function Chat() {
             setError(data.message ?? "发生未知错误");
             break;
           case "done":
-            patch(assistantId, (m) => ({ ...m, streaming: false }));
+            patch(assistantId, (m) => ({ ...m, streaming: false, progress: undefined }));
             break;
         }
       });
@@ -175,11 +187,11 @@ export default function Chat() {
       if ((err as Error).name !== "AbortError") {
         setError((err as Error).message);
       }
-      patch(assistantId, (m) => ({ ...m, streaming: false }));
+      patch(assistantId, (m) => ({ ...m, streaming: false, progress: undefined }));
     } finally {
       setBusy(false);
       abortRef.current = null;
-      patch(assistantId, (m) => ({ ...m, streaming: false }));
+      patch(assistantId, (m) => ({ ...m, streaming: false, progress: undefined }));
     }
   }
 
@@ -191,7 +203,13 @@ export default function Chat() {
     setMessages((prev) => [
       ...prev,
       { id: uid(), role: "user", text: content },
-      { id: assistantId, role: "assistant", text: "", streaming: true },
+      {
+        id: assistantId,
+        role: "assistant",
+        text: "",
+        streaming: true,
+        progress: { stage: "classifying", label: stageLabel("classifying") },
+      },
     ]);
     setInput("");
     void request({ message: content }, assistantId);
@@ -203,7 +221,13 @@ export default function Chat() {
     setMessages((prev) => [
       ...prev,
       { id: uid(), role: "user", text: value },
-      { id: assistantId, role: "assistant", text: "", streaming: true },
+      {
+        id: assistantId,
+        role: "assistant",
+        text: "",
+        streaming: true,
+        progress: { stage: "resuming", label: stageLabel("resuming") },
+      },
     ]);
     setPhone("");
     void request({ resume: value }, assistantId);
