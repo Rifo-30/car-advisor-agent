@@ -122,7 +122,7 @@ src/
   cache/redis.ts           Redis 缓存 + 内存降级
   observability/trace.ts   Langfuse + 本地 trace
   guardrails/guard.ts      ⭐ 广告法 / PII / 注入检测
-  eval/eval.ts             ⭐ 23 条评测用例
+  eval/eval.ts             ⭐ 24 条评测用例
 ```
 
 ---
@@ -209,14 +209,14 @@ const phoneReply = interrupt({ type: "phone", question: "请提供手机号" });
 1. **全链路**：Next.js 前端 → API → LangGraph 编排 → 工具 → RAG → 数据层 → 可观测。
 2. **可解释推荐**：每款车给出"为什么推荐 + 短板"，且可追溯到结构化字段。
 3. **真实 HITL**：`interrupt()` + Checkpointer 实现"确认 → 手机号 → 提交"的暂停恢复。
-4. **工程化**：23 条评测集（100% 通过）、trace、SSE、注入/广告法护栏。
+4. **工程化**：24 条评测集（100% 通过）、trace、SSE、注入/广告法护栏。
 5. **可降级**：无 Key、无数据库都能跑，适合演示与面试现场。
 
 ### 面试讲法（60 秒版）
 
 > 我做了一个汽车垂类的选车决策 Agent。核心判断是：**LLM 不能作为事实来源**。所以车型参数和价格全部走结构化数据，LLM 只负责理解需求和表达。
 > 编排用 LangGraph，把"澄清→筛选→推荐→对比→报价→预约"做成状态机；预约环节用 `interrupt()` 实现人工确认，`Command(resume)` 从 checkpoint 恢复。
-> 工程上配了 23 条评测集做回归，接了 trace 看每一步工具调用，并做了广告法、注入、PII 三层护栏。
+> 工程上配了 24 条评测集做回归，接了 trace 看每一步工具调用，并做了广告法、注入、PII 三层护栏。
 > 外部依赖全部可降级：没有 Key 也能完整演示。
 
 ---
@@ -356,8 +356,8 @@ agent.turn
 
 ```bash
 pnpm typecheck   # tsc --noEmit
-pnpm test        # 46 个单元测试（node:test）
-pnpm eval        # 23 条端到端评测
+pnpm test        # 49 个单元测试（node:test）
+pnpm eval        # 24 条端到端评测
 ```
 
 ### Trace 持久化
@@ -393,8 +393,8 @@ components/
 ```bash
 pnpm typecheck   # TypeScript 类型检查
 pnpm lint        # ESLint（0 errors）
-pnpm test        # 46 个单元测试
-pnpm eval        # 23 条端到端评测
+pnpm test        # 49 个单元测试
+pnpm eval        # 24 条端到端评测
 pnpm build       # 生产构建
 ```
 

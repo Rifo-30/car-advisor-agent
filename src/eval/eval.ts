@@ -38,6 +38,7 @@ const cases: Case[] = [
   { id: "rec-04", category: "推荐", steps: ["纯电，15万左右，通勤"], expect: { hasCandidates: true, energy: ["纯电"] } },
   { id: "rec-05", category: "推荐", steps: ["预算25万，七座，家用"], expect: { hasCandidates: true, minSeats: 7 } },
   { id: "rec-06", category: "推荐", steps: ["预算3-5万，代步"], expect: { allowsEmpty: true, contains: "没有找到" } },
+  { id: "rec-07", category: "推荐", steps: ["10万左右，家用，推荐什么车", "油车呢"], expect: { hasCandidates: true, energy: ["燃油"] } },
 
   { id: "cla-01", category: "澄清", steps: ["我想买台车"], expect: { stage: "clarify" } },
   { id: "cla-02", category: "澄清", steps: ["预算15万"], expect: { stage: "clarify" } },

@@ -50,6 +50,16 @@ function parseBudget(text: string): { budgetMin?: number; budgetMax?: number } {
 }
 
 function parseEnergy(text: string): EnergyType[] | undefined {
+  // 排除式表达要转换成"允许的能源集合"，否则"不要电车"会被错误解析成只要纯电
+  if (/不看|不要|排除|不考虑/.test(text) && /纯电|电车|电动/.test(text)) {
+    return ["燃油", "混动"];
+  }
+  if (/不看|不要|排除|不考虑/.test(text) && /燃油|油车/.test(text)) {
+    return ["混动", "纯电"];
+  }
+  if (/不看|不要|排除|不考虑/.test(text) && /混动|插混|油电/.test(text)) {
+    return ["燃油", "纯电"];
+  }
   if (/新能源/.test(text)) return ["混动", "纯电"];
   if (/纯电|电车|电动/.test(text)) return ["纯电"];
   if (/混动|插混|油电/.test(text)) return ["混动"];
@@ -121,6 +131,12 @@ export function parseMessage(text: string, candidates: Candidate[], cars: CarMod
   // 去掉 undefined，方便状态合并
   for (const k of Object.keys(constraints) as Array<keyof Constraints>) {
     if (constraints[k] === undefined) delete constraints[k];
+  }
+
+  // ⭐ 多轮追问经常省略"推荐"动词，例如上一轮已有推荐后只说"油车呢"。
+  //   只要能解析出新的硬约束，就按"基于上下文继续筛选"处理。
+  if (intent === "unknown" && Object.keys(constraints).length > 0) {
+    intent = "recommend";
   }
 
   const modelIds = matchModelIds(text, cars);

@@ -11,6 +11,13 @@ test("推荐结果必须落在预算区间内", async () => {
   }
 });
 
+test("燃油筛选不会返回纯电车型", async () => {
+  const r = await searchCars({ budgetMin: 9, budgetMax: 11, energy: ["燃油"], limit: 5 });
+  assert.equal(r.ok, true);
+  assert.ok((r.data?.length ?? 0) > 0);
+  for (const c of r.data ?? []) assert.equal(c.energyType, "燃油");
+});
+
 test("未确认不能创建线索", async () => {
   const r = await createTestDriveLead({
     sessionId: "t1", modelId: "yt-x3", city: "北京", phone: "13800138000", confirmed: false,

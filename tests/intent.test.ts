@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { parseMessage } from "../src/agent/intent";
 import { CARS } from "../src/data/cars";
+import type { Candidate } from "../src/types";
 
 test("解析预算区间", () => {
   const r = parseMessage("15万左右，家用，有充电桩", [], CARS);
@@ -27,4 +28,16 @@ test("解析多个序数引用", () => {
 
 test("自我介绍意图不会被当成选车", () => {
   assert.equal(parseMessage("你是谁", [], CARS).intent, "smalltalk");
+});
+
+test("省略推荐动词的能源追问应按推荐处理", () => {
+  const candidates = [{ modelId: "a" }, { modelId: "b" }] as unknown as Candidate[];
+  const r = parseMessage("油车呢", candidates, CARS);
+  assert.equal(r.intent, "recommend");
+  assert.deepEqual(r.constraints.energy, ["燃油"]);
+});
+
+test("排除式能源表达应转换成允许集合", () => {
+  assert.deepEqual(parseMessage("不要电车", [], CARS).constraints.energy, ["燃油", "混动"]);
+  assert.deepEqual(parseMessage("不看油车", [], CARS).constraints.energy, ["混动", "纯电"]);
 });
