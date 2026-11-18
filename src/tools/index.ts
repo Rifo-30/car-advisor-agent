@@ -95,7 +95,8 @@ export async function searchCars(args: SearchArgs): Promise<ToolResult<Candidate
   const score = (c: Candidate) => {
     const tagMatch = c.tags.filter((t) => usage.some((u) => t.includes(u) || u.includes(t))).length;
     const priceFit = 1 - Math.abs(c.price - mid) / span;
-    const chargingFit = args.charging && (c.energyType === "纯电" || c.energyType === "混动") ? 0.5 : 0;
+    // 有固定充电条件时，新能源应获得明显排序优势，而不是仅作微小加分
+    const chargingFit = args.charging && (c.energyType === "纯电" || c.energyType === "混动") ? 1.5 : 0;
     return tagMatch * 2 + priceFit + chargingFit;
   };
   candidates.sort((a, b) => score(b) - score(a));

@@ -29,6 +29,7 @@ import { getAllCars } from "../db/repo";
 import { applyBudgetDelta, resolveTurnContext } from "./context";
 import { rewriteReviewQuery } from "../rag/queryRewrite";
 import { runResearchAgent } from "./toolAgent";
+import { buildReviewFocus } from "./reviewAnswer";
 
 // ---------- 1. 定义状态 ----------
 /**
@@ -57,6 +58,7 @@ const AdvisorState = Annotation.Root({
   budgetDelta: Annotation<number | null>({ reducer: (_a, b) => b, default: () => null }),
   budgetDeltaError: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }),
   retrievalQuery: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }),
+  agentSteps: Annotation<number | null>({ reducer: (_a, b) => b, default: () => null }),
   comparison: Annotation<Comparison | null>({ reducer: (_a, b) => b, default: () => null }),
   citations: Annotation<Citation[]>({ reducer: (_a, b) => b, default: () => [] }), // 本轮答案的来源（参数/口碑），用于溯源和防幻觉
   answer: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }),
@@ -283,7 +285,15 @@ async function retrieveNode(state: State) {
     toolEvents: [{
       turnId: state.turnId,
       name: "search_cars",
-      args: { budgetMin: c.budgetMin, budgetMax: c.budgetMax, energy: c.energy, seats: c.seats, usage: c.usage },
+      args: {
+        budgetMin: c.budgetMin,
+        budgetMax: c.budgetMax,
+        energy: c.energy,
+        seats: c.seats,
+        bodyType: c.bodyType,
+        usage: c.usage,
+        charging: c.charging,
+      },
       summary: res.summary,
       ok: res.ok,
       ms: Date.now() - started,
@@ -374,8 +384,10 @@ async function reviewsNode(state: State) {
   if (!targetId || !targetCar) return { answer: "还没有候选车型，先告诉我预算和用途吧。", stage: "recommend" as Stage };
 
   const query = state.retrievalQuery || state.messages.at(-1)?.content || "优缺点";
+  const question = state.messages.at(-1)?.content ?? "优缺点";
   const res = await searchReviews(targetId, query);
   const reviews = res.data ?? [];
+  const focus = buildReviewFocus(question, reviews);
 
   const citations: Citation[] = reviews.map((r) => ({
     type: "review",
@@ -388,6 +400,7 @@ async function reviewsNode(state: State) {
 
   const answer = [
     `关于 **${targetCar.brand} ${targetCar.series}** 的评测与车主口碑：`,
+    focus,
     positives.length ? `\n**优点/正面**\n${positives.slice(0, 2).join("\n")}` : "",
     negatives.length ? `\n**需要注意**\n${negatives.slice(0, 2).join("\n")}` : "",
     "\n以上内容来自检索到的评测与口碑摘要，建议结合试驾体验判断。",
@@ -418,6 +431,7 @@ async function researchAgentNode(state: State) {
     comparison: result.comparison ?? null,
     citations: result.citations,
     toolEvents: result.toolEvents,
+    agentSteps: result.steps,
     stage: "recommend" as Stage,
   };
 }

@@ -32,6 +32,10 @@ export interface TurnResult {
   skipPolish?: boolean;
   /** 意图来源：rule（纯规则）/ hybrid（规则 + 模型补充） */
   intentSource?: string;
+  /** 当前轮最终意图 */
+  intent?: string;
+  /** Tool Calling 循环步数；固定工作流按工具事件数计 */
+  agentSteps?: number;
 }
 
 export type TurnProgressEvent =
@@ -196,6 +200,8 @@ export async function runAdvisorTurn(
       toolEvents: turnEvents,
       stage: result.stage ?? "confirm",
       mode: hasLLM() ? "live" : "mock",
+      intent: result.intent ?? "unknown",
+      agentSteps: 0,
     };
   }
 
@@ -240,6 +246,8 @@ export async function runAdvisorTurn(
     mode: hasLLM() ? "live" : "mock",
     skipPolish: result.intent === "smalltalk" || result.intent === "research",
     intentSource: result.intentSource ?? "rule",
+    intent: result.intent ?? "unknown",
+    agentSteps: result.agentSteps ?? turnEvents.length,
   };
 }
 

@@ -77,3 +77,15 @@ export async function cacheDel(key: string): Promise<void> {
   }
   mem.delete(key);
 }
+
+/** 评测/脚本退出时主动释放连接，避免进程被 Redis 句柄挂住 */
+export async function closeRedis(): Promise<void> {
+  if (!client) return;
+  try {
+    await client.quit();
+  } catch {
+    client.disconnect();
+  } finally {
+    client = null;
+  }
+}

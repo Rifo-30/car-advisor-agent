@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      EVAL_MIN_PASS_RATE: "0.95"
+      EVAL_MIN_INTENT: "0.95"
+      EVAL_MIN_TOOL_SELECTION: "0.95"
+      EVAL_MIN_TOOL_ARGS: "0.90"
+      EVAL_MIN_MULTI_TURN: "0.95"
+      EVAL_MIN_CITATION_SUPPORT: "0.85"
+      EVAL_MIN_RAG_RECALL: "0.85"
+      EVAL_MIN_RAG_MRR: "0.75"
+      EVAL_MAX_P95_MS: "5000"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.16.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm eval
+      - run: pnpm build

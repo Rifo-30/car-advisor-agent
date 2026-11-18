@@ -111,7 +111,7 @@ export function createReadOnlyTools(context: ToolAgentContext, state: ToolState)
       const candidates = res.data ?? [];
       state.candidates = candidates;
       state.lastSummary = res.summary;
-      toolEvent(state, "search_cars", args, started, res.ok, res.summary);
+      toolEvent(state, "search_cars", merged, started, res.ok, res.summary);
       return compact({ ok: res.ok, summary: res.summary, candidates: candidateSummary(candidates) });
     },
     {

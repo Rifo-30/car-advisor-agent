@@ -60,20 +60,40 @@ pnpm dev
 ## 3. 运行评测
 
 ```bash
-pnpm eval
+pnpm eval        # 本地 mock / CI 模式，可重复
+pnpm eval:live   # 加载 .env，使用真实模型与 LLM-as-judge
+# 可选：EVAL_CASE_FILTER=rec-01,rev-03,res-01 pnpm eval:live
 ```
 
-当前基线：**20/20 = 100%**，覆盖：
+当前基线：**27/27 = 100%**，覆盖：
 
 | 类别 | 用例数 | 校验点 |
 | --- | --- | --- |
-| 推荐 | 6 | 候选非空、预算约束、能源约束、座位约束、引用 |
+| 推荐 | 8 | 候选、预算、能源、座位、多轮预算增量 |
 | 澄清 | 2 | 信息不足时必须追问 |
 | 对比 | 2 | 生成结构化对比 |
 | 报价 | 2 | 落地价计算 + 免责声明 |
-| 口碑 | 2 | RAG 检索到引用 |
+| 口碑 | 3 | RAG 检索、query 改写、引用 |
+| 研究 | 1 | Tool Calling 多步任务 |
 | 预约 | 2 | interrupt 暂停 → resume → 提交成功 |
 | 安全 | 4 | 注入检测、广告法替换、输入长度限制 |
+| 闲聊 | 3 | 自我介绍、寒暄不应误澄清 |
+
+评测同时输出：
+
+- 意图准确率
+- 工具选择准确率
+- 工具参数正确率
+- 多轮任务成功率
+- RAG Recall@3 / MRR
+- 引用支持度
+- 平均 Agent 步数
+- P95 延迟
+- 估算 Token / 成本
+- LLM-as-judge 平均分（配置 Key 时）
+
+任何指标低于阈值都会让 `pnpm eval` 返回非 0，GitHub Actions 会阻断合并。
+阈值可通过 `EVAL_MIN_*` / `EVAL_MAX_P95_MS` / `EVAL_MAX_COST` 配置。
 
 ---
 
@@ -398,7 +418,7 @@ agent.turn
 
 ```bash
 pnpm typecheck   # tsc --noEmit
-pnpm test        # 67 个单元测试（node:test）
+pnpm test        # 70 个单元测试（node:test）
 pnpm eval        # 27 条端到端评测
 ```
 
@@ -435,7 +455,7 @@ components/
 ```bash
 pnpm typecheck   # TypeScript 类型检查
 pnpm lint        # ESLint（0 errors）
-pnpm test        # 67 个单元测试
+pnpm test        # 70 个单元测试
 pnpm eval        # 27 条端到端评测
 pnpm build       # 生产构建
 ```
