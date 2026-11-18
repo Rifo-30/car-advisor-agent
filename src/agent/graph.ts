@@ -30,6 +30,7 @@ import { applyBudgetDelta, resolveTurnContext } from "./context";
 import { rewriteReviewQuery } from "../rag/queryRewrite";
 import { runResearchAgent } from "./toolAgent";
 import { buildReviewFocus } from "./reviewAnswer";
+import { compressContext } from "./contextCompression";
 
 // ---------- 1. 定义状态 ----------
 /**
@@ -44,6 +45,11 @@ const AdvisorState = Annotation.Root({
     reducer: (a, b) => [...a, ...b],          // 消息只追加，不覆盖
     default: () => [],
   }),
+  contextSummary: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }),
+  contextWindowMessages: Annotation<ChatMessage[]>({ reducer: (_a, b) => b, default: () => [] }),
+  contextSummarizedCount: Annotation<number>({ reducer: (_a, b) => b, default: () => 0 }),
+  contextEstimatedTokens: Annotation<number>({ reducer: (_a, b) => b, default: () => 0 }),
+  contextCompressed: Annotation<boolean>({ reducer: (_a, b) => b, default: () => false }),
   constraints: Annotation<Constraints>({
     reducer: (a, b) => ({ ...a, ...b }),     // 约束合并：后到的覆盖先前的
     default: () => ({}),
@@ -70,9 +76,44 @@ const AdvisorState = Annotation.Root({
 
 type State = typeof AdvisorState.State;
 
-// ---------- 2. 节点：分类 ----------
+// ---------- 2. 节点：上下文预算与压缩 ----------
+async function prepareContextNode(state: State) {
+  const compressed = await compressContext(
+    state.messages,
+    {
+      maxTokens: Number(process.env.CONTEXT_MAX_TOKENS ?? 3000),
+      keepRecentMessages: Number(process.env.CONTEXT_KEEP_RECENT_MESSAGES ?? 8),
+      summaryMaxTokens: Number(process.env.CONTEXT_SUMMARY_MAX_TOKENS ?? 600),
+      summarizedCount: state.contextSummarizedCount,
+    },
+    state.contextSummary
+  );
+
+  if (compressed.compressed) {
+    console.log("[context] 上下文已压缩:", {
+      originalMessages: state.messages.length,
+      windowMessages: compressed.messages.length,
+      estimatedTokens: compressed.estimatedTokens,
+    });
+  }
+
+  return {
+    contextSummary: compressed.summary,
+    contextWindowMessages: compressed.messages,
+    contextSummarizedCount: compressed.summarizedCount,
+    contextEstimatedTokens: compressed.estimatedTokens,
+    contextCompressed: compressed.compressed,
+  };
+}
+
+function contextHistory(state: State): ChatMessage[] {
+  return state.contextWindowMessages.length ? state.contextWindowMessages : state.messages;
+}
+
+// ---------- 3. 节点：分类 ----------
 async function classifyNode(state: State) {
-  const last = state.messages[state.messages.length - 1];
+  const history = contextHistory(state);
+  const last = history[history.length - 1];
   const text = last?.content ?? "";
   // ⭐ 用数据库里的车型做名称匹配，避免静态数据与库不一致
   const cars = await getAllCars();
@@ -91,6 +132,7 @@ async function classifyNode(state: State) {
       intent: parsed.intent,
       constraints: parsed.constraints,
       previousConstraints: state.constraints,
+      contextSummary: state.contextSummary,
     });
 
     if (modelResult) {
@@ -143,7 +185,8 @@ async function classifyNode(state: State) {
     ? await rewriteReviewQuery({
         question: text,
         car: targetCar,
-        previousUserMessages: state.messages
+        contextSummary: state.contextSummary,
+        previousUserMessages: contextHistory(state)
           .filter((message) => message.role === "user")
           .slice(-3, -1)
           .map((message) => message.content),
@@ -165,7 +208,7 @@ async function classifyNode(state: State) {
   };
 }
 
-// ---------- 3. 路由：根据意图选择下一站（条件边） ----------
+// ---------- 4. 路由：根据意图选择下一站（条件边） ----------
 function needMoreInfo(state: State): boolean {
   if (state.budgetDeltaError) return true;
   const c = state.constraints;
@@ -203,7 +246,7 @@ function routeFromClassify(state: State): string {
   }
 }
 
-// ---------- 4. 节点：澄清 ----------
+// ---------- 5. 节点：澄清 ----------
 async function clarifyNode(state: State) {
   const c = state.constraints;
   const needs: string[] = [];
@@ -226,7 +269,7 @@ async function clarifyNode(state: State) {
   return { answer, stage: "clarify" as Stage };
 }
 
-// ---------- 5. 节点：检索候选 ----------
+// ---------- 6. 节点：检索候选 ----------
 function describeConstraints(c: Constraints): string {
   const parts: string[] = [];
   if (c.budgetMin != null && c.budgetMax != null) parts.push(`预算 ${c.budgetMin}~${c.budgetMax} 万`);
@@ -301,7 +344,7 @@ async function retrieveNode(state: State) {
   };
 }
 
-// ---------- 6. 节点：对比 ----------
+// ---------- 7. 节点：对比 ----------
 async function compareNode(state: State) {
   const started = Date.now();
   const last = state.messages.at(-1)?.content ?? "";
@@ -343,7 +386,7 @@ async function compareNode(state: State) {
   };
 }
 
-// ---------- 7. 节点：落地价 ----------
+// ---------- 8. 节点：落地价 ----------
 async function quoteNode(state: State) {
   const started = Date.now();
   const cars = await getAllCars();
@@ -375,7 +418,7 @@ async function quoteNode(state: State) {
   };
 }
 
-// ---------- 8. 节点：评测/口碑（RAG） ----------
+// ---------- 9. 节点：评测/口碑（RAG） ----------
 async function reviewsNode(state: State) {
   const started = Date.now();
   const cars = await getAllCars();
@@ -388,6 +431,7 @@ async function reviewsNode(state: State) {
   const res = await searchReviews(targetId, query);
   const reviews = res.data ?? [];
   const focus = buildReviewFocus(question, reviews);
+  const asksNegative = /缺点|不足|问题|槽点|吐槽/.test(question);
 
   const citations: Citation[] = reviews.map((r) => ({
     type: "review",
@@ -395,8 +439,12 @@ async function reviewsNode(state: State) {
     detail: `${r.content.slice(0, 60)}…（评分 ${r.rating}）`,
   }));
 
-  const positives = reviews.filter((r) => r.sentiment === "positive").map((r) => `- ${r.title}：${r.content}`);
-  const negatives = reviews.filter((r) => r.sentiment !== "positive").map((r) => `- ${r.title}：${r.content}`);
+  const positives = asksNegative
+    ? []
+    : reviews.filter((r) => r.sentiment === "positive").map((r) => `- ${r.title}：${r.content}`);
+  const negatives = asksNegative
+    ? []
+    : reviews.filter((r) => r.sentiment !== "positive").map((r) => `- ${r.title}：${r.content}`);
 
   const answer = [
     `关于 **${targetCar.brand} ${targetCar.series}** 的评测与车主口碑：`,
@@ -414,10 +462,12 @@ async function reviewsNode(state: State) {
   };
 }
 
-// ---------- 8.5 节点：受控 Tool Calling 研究循环 ----------
+// ---------- 9.5 节点：受控 Tool Calling 研究循环 ----------
 async function researchAgentNode(state: State) {
   const result = await runResearchAgent({
     query: state.messages.at(-1)?.content ?? "",
+    contextSummary: state.contextSummary,
+    history: contextHistory(state),
     turnId: state.turnId,
     constraints: state.constraints,
     candidates: state.candidates,
@@ -436,7 +486,7 @@ async function researchAgentNode(state: State) {
   };
 }
 
-// ---------- 9. 节点：预约（Human-in-the-loop） ----------
+// ---------- 10. 节点：预约（Human-in-the-loop） ----------
 async function confirmNode(state: State) {
   const cars = await getAllCars();
   const last = state.messages.at(-1)?.content ?? "";
@@ -507,7 +557,7 @@ async function confirmNode(state: State) {
   };
 }
 
-// ---------- 9.5 节点：自我介绍 / 闲聊 ----------
+// ---------- 10.5 节点：自我介绍 / 闲聊 ----------
 async function smalltalkNode() {
   const answer = [
     "我是 **懂车顾问**，一个专注选车决策的 AI 助手。",
@@ -526,7 +576,7 @@ async function smalltalkNode() {
   return { answer, stage: "clarify" as Stage };
 }
 
-// ---------- 10. 编译图（单例） ----------
+// ---------- 11. 编译图（单例） ----------
 // ⭐ Checkpointer 选择策略：
 //   有 DATABASE_URL → PostgresSaver（跨重启/多实例持久化）
 //   无 DATABASE_URL → MemorySaver（本地开发，状态只在内存）
@@ -555,6 +605,7 @@ async function createCheckpointer(): Promise<any> {
 
 function buildGraph(checkpointer: any) {
   return new StateGraph(AdvisorState)
+    .addNode("prepare_context", prepareContextNode)
     .addNode("classify", classifyNode)
     .addNode("clarify", clarifyNode)
     .addNode("retrieve", retrieveNode)
@@ -564,7 +615,8 @@ function buildGraph(checkpointer: any) {
     .addNode("research", researchAgentNode)
     .addNode("confirm", confirmNode)
     .addNode("smalltalk", smalltalkNode)
-    .addEdge(START, "classify")
+    .addEdge(START, "prepare_context")
+    .addEdge("prepare_context", "classify")
     .addConditionalEdges("classify", routeFromClassify, {
       smalltalk: "smalltalk",
       clarify: "clarify",

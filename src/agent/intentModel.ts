@@ -145,12 +145,13 @@ const SYSTEM_PROMPT = `你是选车助手的意图抽取器。只输出 JSON，�
 
 function buildHumanMessage(
   text: string,
-  current: { intent: string; constraints: Constraints; previousConstraints?: Constraints }
+  current: { intent: string; constraints: Constraints; previousConstraints?: Constraints; contextSummary?: string }
 ): string {
   return [
     `用户输入：${text}`,
     `规则层已识别：${JSON.stringify({ intent: current.intent, constraints: current.constraints })}`,
     `上一轮已确认约束：${JSON.stringify(current.previousConstraints ?? {})}`,
+    `历史对话摘要：${current.contextSummary || "无"}`,
     "请只补充规则层没识别到的信息，输出 JSON。",
   ].join("\n");
 }
@@ -160,7 +161,7 @@ function buildHumanMessage(
  */
 export async function extractIntentWithModel(
   text: string,
-  current: { intent: string; constraints: Constraints; previousConstraints?: Constraints },
+  current: { intent: string; constraints: Constraints; previousConstraints?: Constraints; contextSummary?: string },
   timeoutMs = 4000
 ): Promise<ModelIntentResult | null> {
   if (!isIntentModelEnabled()) return null;

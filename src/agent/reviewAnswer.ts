@@ -9,6 +9,7 @@ const TOPICS: Array<{ pattern: RegExp; label: string; evidence: RegExp }> = [
   { pattern: /动力|加速|超车/, label: "动力表现", evidence: /动力|加速|超车|爬坡/ },
   { pattern: /底盘|滤震|舒适/, label: "底盘与舒适性", evidence: /底盘|滤震|舒适|隔音/ },
   { pattern: /车机|智能|辅助驾驶|智驾/, label: "车机与智能体验", evidence: /车机|智能|辅助驾驶|智驾/ },
+  { pattern: /缺点|不足|问题|槽点/, label: "主要缺点", evidence: /缺点|不足|一般|偏|弱|慢|吃力|较高|担心|塑料|卡顿|噪音|风噪|胎噪/ },
 ];
 
 function sentences(text: string): string[] {
@@ -29,12 +30,16 @@ export function buildReviewFocus(question: string, reviews: Review[]): string {
   }
 
   if (!evidence.length) {
-    return `**直接结论**：召回口碑没有直接覆盖“${topic.label}”，建议不要把有限样本当作确定结论。`;
+    return `**直接结论**：检索到的口碑没有直接覆盖“${topic.label}”，建议不要把有限样本当作确定结论。`;
   }
 
   if (topic.label === "高速噪音与隔音") {
-    return `**直接结论**：召回口碑显示隔音表现一般，但缺少专门的高速实测数据，不能断言高速噪音一定很大；建议试驾时重点确认风噪和胎噪。证据：${evidence.join("；")}。`;
+    return `**直接结论**：检索到的口碑显示隔音表现一般，但缺少专门的高速实测数据，不能断言高速噪音一定很大；建议试驾时重点确认风噪和胎噪。证据：${evidence.join("；")}。`;
   }
 
-  return `**直接结论**：关于${topic.label}，召回口碑提到：${evidence.join("；")}。`;
+  if (topic.label === "主要缺点") {
+    return `**直接结论**：检索到的口碑中提到的主要不足包括：${evidence.join("；")}。这些是车主或媒体反馈，不代表每台车都会出现。`;
+  }
+
+  return `**直接结论**：关于${topic.label}，检索到的口碑提到：${evidence.join("；")}。`;
 }

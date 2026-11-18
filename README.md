@@ -65,11 +65,11 @@ pnpm eval:live   # 加载 .env，使用真实模型与 LLM-as-judge
 # 可选：EVAL_CASE_FILTER=rec-01,rev-03,res-01 pnpm eval:live
 ```
 
-当前基线：**27/27 = 100%**，覆盖：
+当前基线：**28/28 = 100%**，覆盖：
 
 | 类别 | 用例数 | 校验点 |
 | --- | --- | --- |
-| 推荐 | 8 | 候选、预算、能源、座位、多轮预算增量 |
+| 推荐 | 9 | 候选、预算、能源、座位、多轮预算增量、上下文压缩 |
 | 澄清 | 2 | 信息不足时必须追问 |
 | 对比 | 2 | 生成结构化对比 |
 | 报价 | 2 | 落地价计算 + 免责声明 |
@@ -88,6 +88,7 @@ pnpm eval:live   # 加载 .env，使用真实模型与 LLM-as-judge
 - RAG Recall@3 / MRR
 - 引用支持度
 - 平均 Agent 步数
+- 平均上下文 Token / 触发压缩轮次
 - P95 延迟
 - 估算 Token / 成本
 - LLM-as-judge 平均分（配置 Key 时）
@@ -142,7 +143,7 @@ src/
   cache/redis.ts           Redis 缓存 + 内存降级
   observability/trace.ts   Langfuse + 本地 trace
   guardrails/guard.ts      ⭐ 广告法 / PII / 注入检测
-  eval/eval.ts             ⭐ 27 条评测用例
+  eval/eval.ts             ⭐ 28 条评测用例
 ```
 
 ---
@@ -185,7 +186,38 @@ src/
 高速、噪音/NVH、舒适性和口碑关键词的检索 query。规则 query 始终可用；指代或
 主题不足时可在 `RAG_QUERY_REWRITE_ENABLED=true` 下调用模型补全，失败自动回退。
 
-### 5.4 受控 Tool Calling（混合编排）
+### 5.4 多轮上下文压缩与 token budget
+
+每次进入图前先执行 `prepare_context`：
+
+- 原始 `messages` 继续保留，保证历史展示与审计不丢；
+- 早期消息按游标增量压缩为 `contextSummary`；
+- 模型和工具只读取 `contextWindowMessages`，避免每轮携带完整历史；
+- 默认保留最近 8 条消息，超出后压缩旧消息；
+- 旧消息超过阈值可调用模型摘要，失败回退确定性摘要；
+- 预算、能源、车型、未完成事项等关键信息要求保留在摘要中。
+
+```text
+原始 messages
+  ↓
+summarizedCount 之前的旧消息 → contextSummary
+  ↓
+contextSummary + 最近消息窗口
+  ↓
+intent / RAG query / Tool Calling
+```
+
+配置：
+
+```env
+CONTEXT_MAX_TOKENS=3000
+CONTEXT_KEEP_RECENT_MESSAGES=8
+CONTEXT_SUMMARY_MAX_TOKENS=600
+CONTEXT_SUMMARY_MODEL_ENABLED=true
+CONTEXT_SUMMARY_MODEL_THRESHOLD=300
+```
+
+### 5.5 受控 Tool Calling（混合编排）
 
 不是所有请求都交给自主 Agent：
 
@@ -199,7 +231,7 @@ src/
 
 无模型或关闭 `TOOL_AGENT_ENABLED` 时，会降级为确定性的多工具计划。
 
-### 5.5 人机协同（Human-in-the-loop）
+### 5.6 人机协同（Human-in-the-loop）
 
 `src/agent/graph.ts` 的 `confirmNode`：
 
@@ -215,14 +247,14 @@ const phoneReply = interrupt({ type: "phone", question: "请提供手机号" });
 - 用户回复后，`new Command({ resume })` 从 **checkpoint** 继续，不重跑已完成步骤；
 - 预约提交前**服务端强制校验 `confirmed`**，不信任前端/模型。
 
-### 5.6 护栏在代码层，不只在 prompt
+### 5.7 护栏在代码层，不只在 prompt
 
 - 注入检测：`detectInjection()`（HTTP 层拦截）
 - 广告法：绝对化用语自动替换 + 价格免责声明
 - PII：手机号脱敏展示、哈希存储
 - 工具鉴权：`create_test_drive_lead` 校验 `confirmed` 与手机号格式
 
-### 5.7 外部依赖全部可降级
+### 5.8 外部依赖全部可降级
 
 | 依赖 | 缺失时 |
 | --- | --- |
@@ -271,14 +303,14 @@ const phoneReply = interrupt({ type: "phone", question: "请提供手机号" });
 1. **全链路**：Next.js 前端 → API → LangGraph 编排 → 工具 → RAG → 数据层 → 可观测。
 2. **可解释推荐**：每款车给出"为什么推荐 + 短板"，且可追溯到结构化字段。
 3. **真实 HITL**：`interrupt()` + Checkpointer 实现"确认 → 手机号 → 提交"的暂停恢复。
-4. **工程化**：27 条评测集（100% 通过）、trace、SSE、注入/广告法护栏。
+4. **工程化**：28 条评测集（100% 通过）、trace、SSE、注入/广告法护栏。
 5. **可降级**：无 Key、无数据库都能跑，适合演示与面试现场。
 
 ### 面试讲法（60 秒版）
 
 > 我做了一个汽车垂类的选车决策 Agent。核心判断是：**LLM 不能作为事实来源**。所以车型参数和价格全部走结构化数据，LLM 只负责理解需求和表达。
 > 编排用 LangGraph，把"澄清→筛选→推荐→对比→报价→预约"做成状态机；预约环节用 `interrupt()` 实现人工确认，`Command(resume)` 从 checkpoint 恢复。
-> 工程上配了 27 条评测集做回归，接了 trace 看每一步工具调用，并做了广告法、注入、PII 三层护栏。
+> 工程上配了 28 条评测集做回归，接了 trace 看每一步工具调用，并做了广告法、注入、PII 三层护栏。
 > 外部依赖全部可降级：没有 Key 也能完整演示。
 
 ---
@@ -418,8 +450,8 @@ agent.turn
 
 ```bash
 pnpm typecheck   # tsc --noEmit
-pnpm test        # 70 个单元测试（node:test）
-pnpm eval        # 27 条端到端评测
+pnpm test        # 74 个单元测试（node:test）
+pnpm eval        # 28 条端到端评测
 ```
 
 ### Trace 持久化
@@ -455,8 +487,8 @@ components/
 ```bash
 pnpm typecheck   # TypeScript 类型检查
 pnpm lint        # ESLint（0 errors）
-pnpm test        # 70 个单元测试
-pnpm eval        # 27 条端到端评测
+pnpm test        # 74 个单元测试
+pnpm eval        # 28 条端到端评测
 pnpm build       # 生产构建
 ```
 

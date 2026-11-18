@@ -10,6 +10,7 @@ export interface ReviewQueryInput {
   question: string;
   car?: CarModel;
   previousUserMessages?: string[];
+  contextSummary?: string;
 }
 
 const ASPECT_EXPANSIONS: Array<[RegExp, string]> = [
@@ -45,7 +46,9 @@ export function buildReviewQuery(input: ReviewQueryInput): string {
   const question = normalize(input.question);
   const carName = input.car ? `${input.car.brand} ${input.car.series}` : "";
   const needsContext = /这车|这款|这辆|那车|那款|那辆|它|该车/.test(question) || Array.from(question).length <= 8;
-  const contextText = needsContext ? (input.previousUserMessages ?? []).slice(-2).join(" ") : "";
+  const contextText = needsContext
+    ? `${input.contextSummary ?? ""} ${(input.previousUserMessages ?? []).slice(-2).join(" ")}`
+    : "";
   const aspects = ASPECT_EXPANSIONS.filter(([pattern]) => pattern.test(`${contextText} ${question}`)).map(([, text]) => text);
 
   const query = dedupeWords(normalize([
@@ -89,6 +92,7 @@ export async function rewriteReviewQuery(input: ReviewQueryInput): Promise<strin
       new HumanMessage([
         `车型：${input.car ? `${input.car.brand} ${input.car.series}` : "未指定"}`,
         `当前问题：${input.question}`,
+        `历史摘要：${input.contextSummary || "无"}`,
         `最近用户消息：${(input.previousUserMessages ?? []).slice(-3).join(" | ") || "无"}`,
         `规则 query：${fallback}`,
       ].join("\n")),

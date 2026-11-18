@@ -9,7 +9,7 @@ import { ChatOpenAI } from "@langchain/openai";
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage, type BaseMessage } from "@langchain/core/messages";
 import { tool, type StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
-import type { Candidate, Citation, Comparison, Constraints, ToolEvent } from "../types";
+import type { Candidate, ChatMessage, Citation, Comparison, Constraints, ToolEvent } from "../types";
 import { compareCars, estimatePrice, getCarDetail, searchCars, searchReviews } from "../tools";
 
 export interface ToolAgentContext {
@@ -19,6 +19,8 @@ export interface ToolAgentContext {
   candidates: Candidate[];
   targetModelId?: string;
   targetModelIds?: string[];
+  contextSummary?: string;
+  history?: ChatMessage[];
 }
 
 export interface ToolAgentResult {
@@ -298,6 +300,8 @@ export async function runToolCallingLoop(
       `当前候选车型：${JSON.stringify(candidateSummary(context.candidates))}`,
       `目标车型：${context.targetModelId || "未指定"}`,
       `目标车型列表：${JSON.stringify(context.targetModelIds ?? [])}`,
+      `历史摘要：${context.contextSummary || "无"}`,
+      `最近对话：${(context.history ?? []).slice(-6).map((message) => `${message.role === "user" ? "用户" : "助手"}：${message.content}`).join(" | ") || "无"}`,
     ].join("\n")),
   ];
 

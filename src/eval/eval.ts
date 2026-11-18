@@ -32,6 +32,7 @@ interface Case {
     hasCitations?: boolean;
     hasComparison?: boolean;
     hasInterrupted?: boolean;
+    contextCompressed?: boolean;
     stage?: string;
     contains?: string;
     notContains?: string[];
@@ -47,6 +48,7 @@ const cases: Case[] = [
   { id: "rec-06", category: "推荐", intent: "recommend", tools: ["search_cars"], toolArgs: { search_cars: { budgetMin: 3, budgetMax: 5, usage: ["通勤"] } }, steps: ["预算3-5万，代步"], expect: { hasCandidates: false, contains: "没有找到" } },
   { id: "rec-07", category: "推荐", intent: "recommend", tools: ["search_cars"], toolArgs: { search_cars: { energy: ["燃油"] } }, steps: ["10万左右，家用，推荐什么车", "油车呢"], expect: { hasCandidates: true, energy: ["燃油"] } },
   { id: "rec-08", category: "推荐", intent: "recommend", tools: ["search_cars"], toolArgs: { search_cars: { energy: ["燃油"], budgetMin: 11, budgetMax: 13 } }, steps: ["10万左右，家用，推荐什么车", "油车呢", "再加两万呢"], expect: { hasCandidates: true, energy: ["燃油"], budgetMax: 13.5 } },
+  { id: "ctx-01", category: "推荐", intent: "reviews", tools: ["search_reviews"], steps: ["15万左右，家用，推荐什么车", "油车呢", "再加两万呢", "这车口碑怎么样", "那这车有什么缺点"], expect: { hasCitations: true, contextCompressed: true } },
 
   { id: "cla-01", category: "澄清", intent: "recommend", tools: [], steps: ["我想买台车"], expect: { stage: "clarify" } },
   { id: "cla-02", category: "澄清", intent: "recommend", tools: [], steps: ["预算15万"], expect: { stage: "clarify" } },
@@ -178,6 +180,7 @@ function checkExpect(c: Case, result: TurnResult): string[] {
   if (e.hasCitations != null) details.push((result.citations.length > 0) === e.hasCitations ? "✓引用" : "✗引用");
   if (e.hasComparison != null) details.push(Boolean(result.comparison) === e.hasComparison ? "✓对比" : "✗对比");
   if (e.hasInterrupted != null) details.push(Boolean(result.interrupted) === e.hasInterrupted ? "✓中断" : "✗中断");
+  if (e.contextCompressed != null) details.push(Boolean(result.contextCompressed) === e.contextCompressed ? "✓上下文压缩" : "✗上下文压缩");
   if (e.stage) details.push(result.stage === e.stage ? "✓阶段" : "✗阶段");
   if (e.contains) details.push(result.answer.includes(e.contains) ? "✓关键词" : "✗关键词");
   if (e.notContains) details.push(e.notContains.every((word) => !result.answer.includes(word)) ? "✓无违禁词" : "✗无违禁词");
@@ -248,7 +251,9 @@ async function main() {
       toolSummaries: [
         ...item.result.toolEvents.map((event) => `${event.name}:${event.summary ?? ""}`),
         ...item.result.candidates.map((candidate) =>
-          `candidate:${candidate.brand} ${candidate.series} ${candidate.variantName},${candidate.price}万,${candidate.energyType},${candidate.seats}座,${candidate.tags.join("/")},${candidate.why.join("/")}`
+          item.result!.intent === "reviews"
+            ? `candidate:${candidate.brand} ${candidate.series},${candidate.price}万,${candidate.energyType},${candidate.seats}座,${candidate.tags.join("/")}`
+            : `candidate:${candidate.brand} ${candidate.series} ${candidate.variantName},${candidate.price}万,${candidate.energyType},${candidate.seats}座,${candidate.tags.join("/")},${candidate.why.join("/")}`
         ),
         ...item.result.citations.map((citation) => `citation:${citation.title}:${citation.detail}`),
       ],
@@ -288,6 +293,9 @@ async function main() {
   const p95 = percentile(resultDurations, 95);
   const agentSteps = results.map((item) => item.result?.agentSteps ?? 0).filter((value) => value > 0);
   const averageSteps = agentSteps.length ? agentSteps.reduce((sum, value) => sum + value, 0) / agentSteps.length : 0;
+  const contextTokens = results.map((item) => item.result?.contextEstimatedTokens ?? 0).filter((value) => value > 0);
+  const averageContextTokens = contextTokens.length ? contextTokens.reduce((sum, value) => sum + value, 0) / contextTokens.length : 0;
+  const compressedTurns = results.filter((item) => item.result?.contextCompressed).length;
   const costs = results.filter((item) => item.result).map((item) => estimatedCaseCost(item.result!, item.c));
   const totalCost = costs.reduce((sum, item) => sum + item.cost, 0);
   const totalTokens = costs.reduce((sum, item) => sum + item.inputTokens + item.outputTokens, 0);
@@ -313,12 +321,14 @@ async function main() {
   console.log(`总体通过率       ${(passRate * 100).toFixed(1)}% (${pass}/${total})`);
   console.log(`意图准确率       ${(intentAccuracy * 100).toFixed(1)}%`);
   console.log(`工具选择准确率   ${(toolAccuracy * 100).toFixed(1)}%`);
-  console.log(`工具参数正确率   ${(argAccuracy * 100).toFixed(1)}%`);
+  console.log(`工具参数正确率   ${argItems.length ? `${(argAccuracy * 100).toFixed(1)}%` : "N/A"}`);
   console.log(`多轮任务成功率   ${(multiTurnSuccess * 100).toFixed(1)}%`);
   console.log(`RAG Recall@3     ${(ragRecall * 100).toFixed(1)}%`);
   console.log(`RAG MRR          ${ragMrr.toFixed(3)}`);
   console.log(`引用支持度       ${citationItems.length ? `${(citationSupport * 100).toFixed(1)}%` : "N/A"}`);
   console.log(`平均 Agent 步数  ${averageSteps.toFixed(2)}`);
+  console.log(`平均上下文 Token ${averageContextTokens.toFixed(0)}`);
+  console.log(`触发压缩轮次     ${compressedTurns}`);
   console.log(`P95 延迟         ${p95}ms`);
   console.log(`估算 Token       ${totalTokens}`);
   console.log(`估算成本         ${totalCost.toFixed(6)} (配置币种)`);

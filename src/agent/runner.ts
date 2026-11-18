@@ -36,6 +36,10 @@ export interface TurnResult {
   intent?: string;
   /** Tool Calling 循环步数；固定工作流按工具事件数计 */
   agentSteps?: number;
+  /** 本轮实际送入模型上下文窗口的估算 token */
+  contextEstimatedTokens?: number;
+  /** 本轮是否触发历史压缩 */
+  contextCompressed?: boolean;
 }
 
 export type TurnProgressEvent =
@@ -45,6 +49,7 @@ export type TurnProgressEvent =
 export type TurnProgressHandler = (event: TurnProgressEvent) => void;
 
 const NODE_PROGRESS: Record<string, { stage: string; label: string }> = {
+  prepare_context: { stage: "context", label: "正在整理对话上下文…" },
   classify: { stage: "classifying", label: "正在理解你的需求…" },
   clarify: { stage: "clarifying", label: "正在确认还缺哪些信息…" },
   retrieve: { stage: "filtering", label: "正在筛选车型…" },
@@ -202,11 +207,24 @@ export async function runAdvisorTurn(
       mode: hasLLM() ? "live" : "mock",
       intent: result.intent ?? "unknown",
       agentSteps: 0,
+      contextEstimatedTokens: result.contextEstimatedTokens ?? 0,
+      contextCompressed: Boolean(result.contextCompressed),
     };
   }
 
   // 输出侧护栏：绝对化用语替换 + 价格免责声明
   const guarded = applyOutputGuardrails(String(result.answer ?? ""));
+
+  // 把助手回答写回图状态，下一轮 context compression 才能保留已推荐车型和已确认结论
+  if (guarded.text) {
+    try {
+      await graph.updateState(config as any, {
+        messages: [{ role: "assistant", content: guarded.text }],
+      } as any);
+    } catch (err) {
+      console.warn("[runner] 助手消息写回 checkpoint 失败:", (err as Error).message);
+    }
+  }
 
   // ⭐ 持久化完整对话：刷新页面后可按 sessionId 恢复
   const prev = (await getSessionState(input.sessionId)) ?? {};
@@ -248,6 +266,8 @@ export async function runAdvisorTurn(
     intentSource: result.intentSource ?? "rule",
     intent: result.intent ?? "unknown",
     agentSteps: result.agentSteps ?? turnEvents.length,
+    contextEstimatedTokens: result.contextEstimatedTokens ?? 0,
+    contextCompressed: Boolean(result.contextCompressed),
   };
 }
 
