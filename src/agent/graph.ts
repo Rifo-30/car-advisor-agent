@@ -26,6 +26,8 @@ import { parseConfirmDecision } from "./confirm";
 import { isValidPhone } from "../guardrails/guard";
 import { searchCars, compareCars, estimatePrice, searchReviews, createTestDriveLead } from "../tools/index";
 import { getAllCars } from "../db/repo";
+import { applyBudgetDelta, resolveTurnContext } from "./context";
+import { rewriteReviewQuery } from "../rag/queryRewrite";
 
 // ---------- 1. 定义状态 ----------
 /**
@@ -49,6 +51,11 @@ const AdvisorState = Annotation.Root({
   intentSource: Annotation<string>({ reducer: (_a, b) => b, default: () => "rule" }),
   stage: Annotation<Stage>({ reducer: (_a, b) => b, default: () => "clarify" }),
   candidates: Annotation<Candidate[]>({ reducer: (_a, b) => b, default: () => [] }),
+  targetModelId: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }),
+  targetModelIds: Annotation<string[]>({ reducer: (_a, b) => b, default: () => [] }),
+  budgetDelta: Annotation<number | null>({ reducer: (_a, b) => b, default: () => null }),
+  budgetDeltaError: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }),
+  retrievalQuery: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }),
   comparison: Annotation<Comparison | null>({ reducer: (_a, b) => b, default: () => null }),
   citations: Annotation<Citation[]>({ reducer: (_a, b) => b, default: () => [] }), // 本轮答案的来源（参数/口碑），用于溯源和防幻觉
   answer: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }),
@@ -73,12 +80,14 @@ async function classifyNode(state: State) {
   //   规则不确定 → 调模型做结构化抽取 → 校验 → 规则优先合并
   let intent: string = parsed.intent;
   let constraints = parsed.constraints;
+  let budgetDelta = parsed.budgetDelta;
   let intentSource = "rule";
 
   if (needsModelFallback(parsed)) {
     const modelResult = await extractIntentWithModel(text, {
       intent: parsed.intent,
       constraints: parsed.constraints,
+      previousConstraints: state.constraints,
     });
 
     if (modelResult) {
@@ -88,6 +97,7 @@ async function classifyNode(state: State) {
       );
       intent = merged.intent;
       constraints = merged.constraints;
+      budgetDelta = merged.budgetDelta;
       intentSource = merged.adopted ? "hybrid" : "rule";
 
       if (merged.conflicts.length) {
@@ -96,11 +106,57 @@ async function classifyNode(state: State) {
     }
   }
 
+  let nextConstraints: Constraints = { ...state.constraints, ...constraints };
+  let budgetDeltaError = "";
+  let resolvedBudgetDelta: number | null = budgetDelta ?? null;
+
+  if (budgetDelta != null) {
+    const adjusted = applyBudgetDelta(nextConstraints, budgetDelta);
+    if (adjusted.applied) {
+      nextConstraints = adjusted.constraints;
+    } else if (adjusted.reason === "MISSING_BASE") {
+      budgetDeltaError = "当前会话还没有基础预算，不能直接做相对预算调整。";
+      console.warn("[intent] 相对预算缺少基础区间:", { budgetDelta, previousConstraints: state.constraints });
+    } else {
+      budgetDeltaError = "预算调整后的区间无效，请确认调整金额。";
+      resolvedBudgetDelta = null;
+      console.warn("[intent] 相对预算计算结果无效:", { budgetDelta, previousConstraints: state.constraints });
+    }
+  }
+
+  const resolved = resolveTurnContext({
+    intent,
+    text,
+    candidates: state.candidates,
+    cars,
+    explicitModelIds: parsed.modelIds,
+    ordinal: parsed.ordinal,
+  });
+
+  const targetCar = resolved.targetModelId
+    ? cars.find((car) => car.id === resolved.targetModelId)
+    : undefined;
+  const retrievalQuery = intent === "reviews" && targetCar
+    ? await rewriteReviewQuery({
+        question: text,
+        car: targetCar,
+        previousUserMessages: state.messages
+          .filter((message) => message.role === "user")
+          .slice(-3, -1)
+          .map((message) => message.content),
+      }).catch(() => "")
+    : "";
+
   return {
     turnId: randomUUID(),   // 每轮唯一 ID：前端只展示本轮工具事件
     intent,
-    constraints: { ...state.constraints, ...constraints },
+    constraints: nextConstraints,
     ordinal: parsed.ordinal ?? [],
+    targetModelId: resolved.targetModelId ?? "",
+    targetModelIds: resolved.targetModelIds,
+    budgetDelta: resolvedBudgetDelta,
+    budgetDeltaError,
+    retrievalQuery,
     intentSource,
     stage: "clarify" as Stage,
   };
@@ -108,6 +164,7 @@ async function classifyNode(state: State) {
 
 // ---------- 3. 路由：根据意图选择下一站（条件边） ----------
 function needMoreInfo(state: State): boolean {
+  if (state.budgetDeltaError) return true;
   const c = state.constraints;
   const noBudget = c.budgetMin == null;
   const noContext = !c.usage?.length && !c.energy?.length && !c.bodyType?.length;
@@ -121,19 +178,18 @@ function routeFromClassify(state: State): string {
     case "smalltalk":
       return "smalltalk";
     case "book":
-      return hasCandidates || matchModelIds(state.messages.at(-1)?.content ?? "").length
+      return Boolean(state.targetModelId) || hasCandidates
         ? "confirm"
         : "clarify";
     case "compare": {
       // 用户直接点名两款车（如「对比启航A5和远山X3」）时，不需要先推荐
-      const named = matchModelIds(state.messages.at(-1)?.content ?? "");
-      if (named.length >= 2) return "compare";
+      if (state.targetModelIds.length >= 2) return "compare";
       return hasCandidates ? "compare" : needMoreInfo(state) ? "clarify" : "retrieve";
     }
     case "price":
-      return hasCandidates ? "quote" : needMoreInfo(state) ? "clarify" : "retrieve";
+      return state.targetModelId || hasCandidates ? "quote" : needMoreInfo(state) ? "clarify" : "retrieve";
     case "reviews":
-      return hasCandidates ? "reviews" : needMoreInfo(state) ? "clarify" : "retrieve";
+      return state.targetModelId || hasCandidates ? "reviews" : needMoreInfo(state) ? "clarify" : "retrieve";
     case "recommend":
       return needMoreInfo(state) ? "clarify" : "retrieve";
     default:
@@ -146,7 +202,15 @@ function routeFromClassify(state: State): string {
 async function clarifyNode(state: State) {
   const c = state.constraints;
   const needs: string[] = [];
-  if (c.budgetMin == null) needs.push("预算大概多少（比如「15 万左右」或「10-15 万」）");
+  const missingBaseForDelta = state.budgetDelta != null && c.budgetMin == null;
+
+  if (missingBaseForDelta) {
+    const direction = state.budgetDelta! > 0 ? "增加" : "减少";
+    needs.unshift(`你想把预算${direction} ${Math.abs(state.budgetDelta!)} 万，但我还不知道当前基础预算，请先告诉我现在的预算。`);
+  } else {
+    if (state.budgetDeltaError) needs.push(state.budgetDeltaError);
+    if (c.budgetMin == null) needs.push("预算大概多少（比如「15 万左右」或「10-15 万」）");
+  }
   if (!c.usage?.length && !c.energy?.length) needs.push("主要用途（通勤 / 家用 / 长途 / 代步），以及有没有固定充电条件");
 
   const answer =
@@ -234,7 +298,9 @@ async function compareNode(state: State) {
   const ordinalIds = (state.ordinal ?? [])
     .map((i) => state.candidates[i]?.modelId)
     .filter((v): v is string => Boolean(v));
-  const ids = named.length >= 2
+  const ids = state.targetModelIds.length >= 2
+    ? state.targetModelIds
+    : named.length >= 2
     ? named
     : ordinalIds.length >= 2
       ? ordinalIds
@@ -267,10 +333,14 @@ async function compareNode(state: State) {
 // ---------- 7. 节点：落地价 ----------
 async function quoteNode(state: State) {
   const started = Date.now();
-  const top = state.candidates[0];
-  if (!top) return { answer: "还没有候选车型，先告诉我预算和用途吧。", stage: "quote" as Stage };
+  const cars = await getAllCars();
+  const targetId = state.targetModelId || state.candidates[0]?.modelId || "";
+  const targetCar = cars.find((car) => car.id === targetId);
+  if (!targetId || !targetCar) return { answer: "还没有候选车型，先告诉我预算和用途吧。", stage: "quote" as Stage };
+  const candidate = state.candidates.find((item) => item.modelId === targetId);
+  const variantId = candidate?.variantId ?? targetCar.variants[0]?.id;
 
-  const res = await estimatePrice(top.modelId, top.variantId, state.constraints.city);
+  const res = await estimatePrice(targetId, variantId, state.constraints.city);
   const d = res.data;
   const answer = d
     ? [
@@ -288,18 +358,20 @@ async function quoteNode(state: State) {
   return {
     answer,
     stage: "quote" as Stage,
-    toolEvents: [{ turnId: state.turnId, name: "estimate_price", args: { modelId: top.modelId, city: state.constraints.city }, summary: res.summary, ok: res.ok, ms: Date.now() - started }],
+    toolEvents: [{ turnId: state.turnId, name: "estimate_price", args: { modelId: targetId, city: state.constraints.city }, summary: res.summary, ok: res.ok, ms: Date.now() - started }],
   };
 }
 
 // ---------- 8. 节点：评测/口碑（RAG） ----------
 async function reviewsNode(state: State) {
   const started = Date.now();
-  const top = state.candidates[0];
-  if (!top) return { answer: "还没有候选车型，先告诉我预算和用途吧。", stage: "recommend" as Stage };
+  const cars = await getAllCars();
+  const targetId = state.targetModelId || state.candidates[0]?.modelId || "";
+  const targetCar = cars.find((car) => car.id === targetId);
+  if (!targetId || !targetCar) return { answer: "还没有候选车型，先告诉我预算和用途吧。", stage: "recommend" as Stage };
 
-  const topic = state.messages.at(-1)?.content ?? "优缺点";
-  const res = await searchReviews(top.modelId, topic);
+  const query = state.retrievalQuery || state.messages.at(-1)?.content || "优缺点";
+  const res = await searchReviews(targetId, query);
   const reviews = res.data ?? [];
 
   const citations: Citation[] = reviews.map((r) => ({
@@ -312,7 +384,7 @@ async function reviewsNode(state: State) {
   const negatives = reviews.filter((r) => r.sentiment !== "positive").map((r) => `- ${r.title}：${r.content}`);
 
   const answer = [
-    `关于 **${top.brand} ${top.series}** 的评测与车主口碑：`,
+    `关于 **${targetCar.brand} ${targetCar.series}** 的评测与车主口碑：`,
     positives.length ? `\n**优点/正面**\n${positives.slice(0, 2).join("\n")}` : "",
     negatives.length ? `\n**需要注意**\n${negatives.slice(0, 2).join("\n")}` : "",
     "\n以上内容来自检索到的评测与口碑摘要，建议结合试驾体验判断。",
@@ -322,7 +394,7 @@ async function reviewsNode(state: State) {
     answer,
     citations,
     stage: "recommend" as Stage,
-    toolEvents: [{ turnId: state.turnId, name: "search_reviews", args: { modelId: top.modelId, topic }, summary: res.summary, ok: res.ok, ms: Date.now() - started }],
+    toolEvents: [{ turnId: state.turnId, name: "search_reviews", args: { modelId: targetId, query }, summary: res.summary, ok: res.ok, ms: Date.now() - started }],
   };
 }
 
@@ -332,7 +404,7 @@ async function confirmNode(state: State) {
   const last = state.messages.at(-1)?.content ?? "";
   const named = matchModelIds(last, cars);
   const ordinalPick = state.ordinal?.length ? state.candidates[state.ordinal[0]] : undefined;
-  const modelId = named[0] ?? ordinalPick?.modelId ?? state.candidates[0]?.modelId ?? "";
+  const modelId = state.targetModelId || named[0] || ordinalPick?.modelId || state.candidates[0]?.modelId || "";
   if (!modelId) return { answer: "还没有候选车型，先让我帮你选几款吧。", stage: "done" as Stage };
 
   const car = cars.find((c) => c.id === modelId);

@@ -14,6 +14,8 @@ import type { Constraints, EnergyType } from "../types";
 export interface ModelIntentResult {
   intent: string;
   constraints: Constraints;
+  /** 相对预算变化，单位万元；正数增加，负数减少 */
+  budgetDelta?: number;
   confidence: number;
 }
 
@@ -99,7 +101,18 @@ export function validateModelIntent(raw: unknown): ModelIntentResult | null {
     delete constraints.budgetMax;
   }
 
-  return { intent, constraints, confidence };
+  let budgetDelta: number | undefined;
+  if (obj.budgetDelta != null) {
+    const n = Number(obj.budgetDelta);
+    if (Number.isFinite(n) && n !== 0 && Math.abs(n) <= 100) budgetDelta = n;
+  }
+
+  // 同一轮不能既给绝对预算又给相对增量，避免静默做出错误金额
+  if (budgetDelta != null && (constraints.budgetMin != null || constraints.budgetMax != null)) {
+    return null;
+  }
+
+  return { intent, constraints, budgetDelta, confidence };
 }
 
 const SYSTEM_PROMPT = `你是选车助手的意图抽取器。只输出 JSON，不要输出任何解释、不要输出 Markdown。
@@ -113,6 +126,7 @@ const SYSTEM_PROMPT = `你是选车助手的意图抽取器。只输出 JSON，�
 - charging：布尔值（有固定充电条件为 true）
 - city：城市名
 - budgetMin / budgetMax：数字，单位万元
+- budgetDelta：相对预算变化，单位万元；增加为正数，减少为负数
 - confidence：0~1，表示你对整体判断的把握
 
 抽取规则：
@@ -122,12 +136,19 @@ const SYSTEM_PROMPT = `你是选车助手的意图抽取器。只输出 JSON，�
 4. "去比较远的地方 / 出远门" 暗示 usage 包含 长途；这里的"比较"是程度副词，不是对比车型。
 5. 没提到的字段不要输出。
 6. 完全无法判断意图时，intent 用 "clarify"。
-7. 如果文本里给了"十几万""二十以内"这类模糊预算，给出你理解的区间并降低 confidence。`;
+7. 如果文本里给了"十几万""二十以内"这类模糊预算，给出你理解的区间并降低 confidence。
+8. "再加两万"只输出 budgetDelta: 2，不要计算最终预算。
+9. "便宜一万"只输出 budgetDelta: -1，不要计算最终预算。
+10. 明确的新预算如"改成7万"用 budgetMin/budgetMax；同一轮不要同时输出绝对预算和 budgetDelta。`;
 
-function buildHumanMessage(text: string, current: { intent: string; constraints: Constraints }): string {
+function buildHumanMessage(
+  text: string,
+  current: { intent: string; constraints: Constraints; previousConstraints?: Constraints }
+): string {
   return [
     `用户输入：${text}`,
     `规则层已识别：${JSON.stringify({ intent: current.intent, constraints: current.constraints })}`,
+    `上一轮已确认约束：${JSON.stringify(current.previousConstraints ?? {})}`,
     "请只补充规则层没识别到的信息，输出 JSON。",
   ].join("\n");
 }
@@ -137,7 +158,7 @@ function buildHumanMessage(text: string, current: { intent: string; constraints:
  */
 export async function extractIntentWithModel(
   text: string,
-  current: { intent: string; constraints: Constraints },
+  current: { intent: string; constraints: Constraints; previousConstraints?: Constraints },
   timeoutMs = 4000
 ): Promise<ModelIntentResult | null> {
   if (!isIntentModelEnabled()) return null;

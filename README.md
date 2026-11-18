@@ -122,7 +122,7 @@ src/
   cache/redis.ts           Redis 缓存 + 内存降级
   observability/trace.ts   Langfuse + 本地 trace
   guardrails/guard.ts      ⭐ 广告法 / PII / 注入检测
-  eval/eval.ts             ⭐ 24 条评测用例
+  eval/eval.ts             ⭐ 26 条评测用例
 ```
 
 ---
@@ -141,7 +141,31 @@ src/
 - 评测口碑走 RAG，返回带来源的引用；
 - 优先 pgvector 语义检索，失败自动降级 BM25 关键词检索。
 
-### 5.3 人机协同（Human-in-the-loop）
+### 5.3 全局上下文解析，节点只构建自己的查询
+
+- `resolveTurnContext()` 统一解析「这车 / 它 / 前两款 / 第二款 / 明确车型名」；
+- `targetModelId` 用于口碑、报价、预约；`targetModelIds` 用于对比；
+- `budgetDelta` 只表示相对预算操作（如「再加两万」为 `+2`），不直接进入工具参数；
+- 预算增量在历史 constraints 合并后由 `applyBudgetDelta()` 确定性计算；
+- **只有 reviews 节点**构建 RAG `retrievalQuery`，结构化推荐/对比/报价/预约不经过 query rewrite。
+
+```text
+用户输入
+→ intent + constraints
+→ 历史状态合并
+→ targetModelId(s) / budgetDelta
+→ route
+→ recommend: SearchQuery
+→ compare: modelIds
+→ quote/book: targetModelId
+→ reviews: modelId + retrievalQuery
+```
+
+口碑 query 会补全车型、指代和属性词。例如「这车高速噪音大吗」会转换为包含车型、
+高速、噪音/NVH、舒适性和口碑关键词的检索 query。规则 query 始终可用；指代或
+主题不足时可在 `RAG_QUERY_REWRITE_ENABLED=true` 下调用模型补全，失败自动回退。
+
+### 5.4 人机协同（Human-in-the-loop）
 
 `src/agent/graph.ts` 的 `confirmNode`：
 
@@ -157,14 +181,14 @@ const phoneReply = interrupt({ type: "phone", question: "请提供手机号" });
 - 用户回复后，`new Command({ resume })` 从 **checkpoint** 继续，不重跑已完成步骤；
 - 预约提交前**服务端强制校验 `confirmed`**，不信任前端/模型。
 
-### 5.4 护栏在代码层，不只在 prompt
+### 5.5 护栏在代码层，不只在 prompt
 
 - 注入检测：`detectInjection()`（HTTP 层拦截）
 - 广告法：绝对化用语自动替换 + 价格免责声明
 - PII：手机号脱敏展示、哈希存储
 - 工具鉴权：`create_test_drive_lead` 校验 `confirmed` 与手机号格式
 
-### 5.5 外部依赖全部可降级
+### 5.6 外部依赖全部可降级
 
 | 依赖 | 缺失时 |
 | --- | --- |
@@ -213,14 +237,14 @@ const phoneReply = interrupt({ type: "phone", question: "请提供手机号" });
 1. **全链路**：Next.js 前端 → API → LangGraph 编排 → 工具 → RAG → 数据层 → 可观测。
 2. **可解释推荐**：每款车给出"为什么推荐 + 短板"，且可追溯到结构化字段。
 3. **真实 HITL**：`interrupt()` + Checkpointer 实现"确认 → 手机号 → 提交"的暂停恢复。
-4. **工程化**：24 条评测集（100% 通过）、trace、SSE、注入/广告法护栏。
+4. **工程化**：26 条评测集（100% 通过）、trace、SSE、注入/广告法护栏。
 5. **可降级**：无 Key、无数据库都能跑，适合演示与面试现场。
 
 ### 面试讲法（60 秒版）
 
 > 我做了一个汽车垂类的选车决策 Agent。核心判断是：**LLM 不能作为事实来源**。所以车型参数和价格全部走结构化数据，LLM 只负责理解需求和表达。
 > 编排用 LangGraph，把"澄清→筛选→推荐→对比→报价→预约"做成状态机；预约环节用 `interrupt()` 实现人工确认，`Command(resume)` 从 checkpoint 恢复。
-> 工程上配了 24 条评测集做回归，接了 trace 看每一步工具调用，并做了广告法、注入、PII 三层护栏。
+> 工程上配了 26 条评测集做回归，接了 trace 看每一步工具调用，并做了广告法、注入、PII 三层护栏。
 > 外部依赖全部可降级：没有 Key 也能完整演示。
 
 ---
@@ -360,8 +384,8 @@ agent.turn
 
 ```bash
 pnpm typecheck   # tsc --noEmit
-pnpm test        # 51 个单元测试（node:test）
-pnpm eval        # 24 条端到端评测
+pnpm test        # 62 个单元测试（node:test）
+pnpm eval        # 26 条端到端评测
 ```
 
 ### Trace 持久化
@@ -397,8 +421,8 @@ components/
 ```bash
 pnpm typecheck   # TypeScript 类型检查
 pnpm lint        # ESLint（0 errors）
-pnpm test        # 51 个单元测试
-pnpm eval        # 24 条端到端评测
+pnpm test        # 62 个单元测试
+pnpm eval        # 26 条端到端评测
 pnpm build       # 生产构建
 ```
 

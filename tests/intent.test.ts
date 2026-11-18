@@ -41,3 +41,25 @@ test("排除式能源表达应转换成允许集合", () => {
   assert.deepEqual(parseMessage("不要电车", [], CARS).constraints.energy, ["燃油", "混动"]);
   assert.deepEqual(parseMessage("不看油车", [], CARS).constraints.energy, ["混动", "纯电"]);
 });
+
+test("解析相对预算增量且不误当绝对预算", () => {
+  const add = parseMessage("再加两万呢", [], CARS);
+  assert.equal(add.intent, "recommend");
+  assert.equal(add.budgetDelta, 2);
+  assert.equal(add.constraints.budgetMin, undefined);
+
+  const decrease = parseMessage("便宜一万", [], CARS);
+  assert.equal(decrease.budgetDelta, -1);
+
+  const arabic = parseMessage("预算提高2.5万", [], CARS);
+  assert.equal(arabic.budgetDelta, 2.5);
+  assert.equal(arabic.constraints.budgetMin, undefined);
+
+  assert.equal(parseMessage("再加点", [], CARS).budgetDelta, undefined);
+});
+
+test("候选上下文中的口碑属性问题应识别为 reviews", () => {
+  const candidates = [{ modelId: "yt-x1" }] as unknown as Candidate[];
+  assert.equal(parseMessage("这车高速噪音大吗", candidates, CARS).intent, "reviews");
+  assert.equal(parseMessage("它空间怎么样", candidates, CARS).intent, "reviews");
+});

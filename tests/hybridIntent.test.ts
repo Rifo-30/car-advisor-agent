@@ -85,6 +85,21 @@ test("validateModelIntent 丢弃反向预算区间", () => {
   assert.equal(r?.constraints.budgetMax, undefined);
 });
 
+test("validateModelIntent 接受相对预算增量，拒绝绝对与相对混用", () => {
+  const ok = validateModelIntent({ intent: "recommend", budgetDelta: 2, confidence: 0.9 });
+  assert.equal(ok?.budgetDelta, 2);
+  assert.equal(validateModelIntent({ intent: "recommend", budgetDelta: 2, budgetMax: 10, confidence: 0.9 }), null);
+});
+
+test("规则 budgetDelta 优先于模型 budgetDelta", () => {
+  const r = mergeIntent(
+    { intent: "recommend", constraints: {}, budgetDelta: 2 },
+    { intent: "recommend", constraints: {}, budgetDelta: 3, confidence: 0.9 }
+  );
+  assert.equal(r.budgetDelta, 2);
+  assert.ok(r.conflicts.some((item) => item.startsWith("budgetDelta:")));
+});
+
 // ---------------- needsModelFallback ----------------
 
 test("带娃这类口语化表达应触发模型补充", () => {

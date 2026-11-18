@@ -103,6 +103,7 @@ export async function runAdvisorTurn(
 
     for await (const raw of stream) {
       const task = raw as TaskStreamEvent;
+      // input 表示节点开始
       if ("input" in task) {
         const progress = getNodeProgress(task.name);
         if (progress) onProgress?.({ event: "stage", ...progress, node: task.name });

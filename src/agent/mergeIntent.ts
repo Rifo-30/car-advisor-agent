@@ -12,6 +12,8 @@ import type { ModelIntentResult } from "./intentModel";
 export interface RuleIntent {
   intent: string;
   constraints: Constraints;
+  /** 当前轮相对预算变化，单位万元 */
+  budgetDelta?: number;
   /** 规则意图是否"证据不足"（弱匹配），为 true 时允许模型覆盖 intent */
   weakIntent?: boolean;
 }
@@ -19,6 +21,8 @@ export interface RuleIntent {
 export interface MergeResult {
   intent: string;
   constraints: Constraints;
+  /** 当前轮相对预算变化，单位万元 */
+  budgetDelta?: number;
   /** 是否实际采纳了模型的某部分结果 */
   adopted: boolean;
   /** 规则与模型冲突的字段（已按"规则优先"处理） */
@@ -32,7 +36,13 @@ export function mergeIntent(rule: RuleIntent, model: ModelIntentResult | null): 
   const conflicts: string[] = [];
 
   if (!model) {
-    return { intent: rule.intent, constraints: { ...rule.constraints }, adopted: false, conflicts };
+    return {
+      intent: rule.intent,
+      constraints: { ...rule.constraints },
+      budgetDelta: rule.budgetDelta,
+      adopted: false,
+      conflicts,
+    };
   }
 
   // ---------- 1. intent ----------
@@ -52,6 +62,14 @@ export function mergeIntent(rule: RuleIntent, model: ModelIntentResult | null): 
 
   // ---------- 2. constraints：规则覆盖模型 ----------
   const constraints: Constraints = { ...model.constraints, ...rule.constraints };
+
+  // ---------- 2.1 budgetDelta：规则优先，模型只补缺 ----------
+  let budgetDelta = rule.budgetDelta;
+  if (budgetDelta != null && model.budgetDelta != null && budgetDelta !== model.budgetDelta) {
+    conflicts.push(`budgetDelta: 规则=${budgetDelta} 模型=${model.budgetDelta}`);
+  } else if (budgetDelta == null && model.budgetDelta != null) {
+    budgetDelta = model.budgetDelta;
+  }
 
   // ---------- 3. 冲突检测（规则优先，但记录下来） ----------
   for (const key of SCALAR_KEYS) {
@@ -73,8 +91,8 @@ export function mergeIntent(rule: RuleIntent, model: ModelIntentResult | null): 
   const intentChanged = intent !== rule.intent;
   const modelFilledSomething = Object.keys(model.constraints).some(
     (k) => (rule.constraints as Record<string, unknown>)[k] == null
-  );
+  ) || (rule.budgetDelta == null && model.budgetDelta != null);
   const adopted = intentChanged || modelFilledSomething;
 
-  return { intent, constraints, adopted, conflicts };
+  return { intent, constraints, budgetDelta, adopted, conflicts };
 }
