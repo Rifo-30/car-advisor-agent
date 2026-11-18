@@ -413,6 +413,10 @@ pnpm dev
 ```
 agent.turn
 ├── graph.invoke       LangGraph 执行（stage / interrupted / error）
+├── node:prepare_context  上下文压缩与 token budget
+├── router:execution    direct / tool_loop / clarify 路由
+├── node:classify      意图、约束、目标车型
+├── node:retrieve / compare / quote / reviews / research / confirm
 ├── tool:search_cars   工具调用（参数、结果摘要、耗时）
 ├── tool:compare_cars
 ├── tool:estimate_price
@@ -423,10 +427,11 @@ agent.turn
 
 - 前端右上角「查看 Trace」可直接看时间线
 - 异常路径会写入 `error` 并闭环（不会留下未结束的 span）
+- Trace 顶部显示 `executionMode`、`executionRouteSource`、intent、上下文压缩和 token
 - 护栏替换的告警记录在 `output.guardrailWarnings`
 
-**已知限制**：trace 存在进程内存（最多 200 条），重启即清空。
-需要跨重启保留时可接 Langfuse，或将 trace 表持久化到 Postgres。
+有 PostgreSQL 时会持久化到 `traces` 表；没有数据库时保存在进程内存（最多 200 条）。
+配置 Langfuse 后，同样的 trace/span 也会上报远端。
 
 ---
 
@@ -465,7 +470,7 @@ agent.turn
 
 ```bash
 pnpm typecheck   # tsc --noEmit
-pnpm test        # 79 个单元测试（node:test）
+pnpm test        # 80 个单元测试（node:test）
 pnpm eval        # 28 条端到端评测
 ```
 
@@ -502,7 +507,7 @@ components/
 ```bash
 pnpm typecheck   # TypeScript 类型检查
 pnpm lint        # ESLint（0 errors）
-pnpm test        # 79 个单元测试
+pnpm test        # 80 个单元测试
 pnpm eval        # 28 条端到端评测
 pnpm build       # 生产构建
 ```

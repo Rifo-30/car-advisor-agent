@@ -6,7 +6,7 @@ import Header from "./chat/Header";
 import HistoryModal from "./chat/HistoryModal";
 import MessageItem from "./chat/MessageItem";
 import TraceModal from "./chat/TraceModal";
-import type { Health, Interrupt, Message, SessionSummary } from "./chat/types";
+import type { Health, Interrupt, Message, SessionSummary, TraceMeta } from "./chat/types";
 import { getUserId, SAMPLES, stageLabel, uid } from "./chat/utils";
 
 export default function Chat() {
@@ -28,6 +28,7 @@ export default function Chat() {
 
   // ---------- Trace ----------
   const [traceId, setTraceId] = useState("");
+  const [traceMeta, setTraceMeta] = useState<TraceMeta | null>(null);
   const [traceOpen, setTraceOpen] = useState(false);
   const [traceData, setTraceData] = useState<any>(null);
   const [traceLoading, setTraceLoading] = useState(false);
@@ -138,6 +139,14 @@ export default function Chat() {
             break;
           case "trace":
             setTraceId(data.traceId);
+            setTraceMeta({
+              intent: data.intent,
+              intentSource: data.intentSource,
+              executionMode: data.executionMode,
+              executionRouteSource: data.executionRouteSource,
+              contextCompressed: data.contextCompressed,
+              contextEstimatedTokens: data.contextEstimatedTokens,
+            });
             break;
           case "tool":
             patch(assistantId, (m) => ({ ...m, toolEvents: [...(m.toolEvents ?? []), data] }));
@@ -245,6 +254,7 @@ export default function Chat() {
     setQuickReplies([]);
     setInterrupt(null);
     setTraceId("");
+    setTraceMeta(null);
     setError("");
     setNotice("");
   }
@@ -295,6 +305,7 @@ export default function Chat() {
       setInterrupt(null);
       setQuickReplies([]);
       setTraceId("");
+      setTraceMeta(null);
       setError("");
       setNotice("");
       setHistoryOpen(false);
@@ -308,6 +319,7 @@ export default function Chat() {
       <Header
         health={health}
         traceId={traceId}
+        traceMeta={traceMeta}
         onHistory={openHistory}
         onNewSession={newSession}
         onTrace={openTrace}

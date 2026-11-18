@@ -32,6 +32,7 @@ import { runResearchAgent } from "./toolAgent";
 import { buildReviewFocus } from "./reviewAnswer";
 import { compressContext } from "./contextCompression";
 import { routeExecutionMode } from "./executionRouter";
+import { appendSpan } from "../observability/trace";
 
 // ---------- 1. 定义状态 ----------
 /**
@@ -39,6 +40,7 @@ import { routeExecutionMode } from "./executionRouter";
  */
 const AdvisorState = Annotation.Root({
   sessionId: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }),
+  traceId: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }),
   userId: Annotation<string>({ reducer: (_a, b) => b, default: () => "anonymous" }),
   ordinal: Annotation<number[]>({ reducer: (_a, b) => b, default: () => [] }), // "第几款"的下标数组，用于精确指定候选
   turnId: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }), // 该轮唯一ID、用户展示这一轮的信息，比如筛选出这一轮的工具展示
@@ -195,6 +197,7 @@ async function classifyNode(state: State) {
           .map((message) => message.content),
       }).catch(() => "")
     : "";
+  const routeStarted = Date.now();
   const executionRoute = await routeExecutionMode({
     text,
     intent,
@@ -202,6 +205,18 @@ async function classifyNode(state: State) {
     candidates: state.candidates,
     contextSummary: state.contextSummary,
   });
+  appendSpan(
+    state.traceId,
+    "router:execution",
+    { intent, text: text.slice(0, 200) },
+    {
+      mode: executionRoute.mode,
+      source: executionRoute.source,
+      confidence: executionRoute.confidence,
+      reason: executionRoute.reason,
+    },
+    Date.now() - routeStarted
+  );
 
   return {
     turnId: randomUUID(),   // 每轮唯一 ID：前端只展示本轮工具事件

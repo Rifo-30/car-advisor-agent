@@ -157,7 +157,13 @@ export function appendSpan(
 export function finishTrace(traceId: string, output: unknown): void {
   const record = localTraces.get(traceId);
   if (!record) return;
-  record.output = output;
+  // 保留 runner 写入的路由、意图、上下文等字段，再合并 API 后的润色指标
+  const previous = record.output;
+  record.output =
+    previous && typeof previous === "object" && !Array.isArray(previous) &&
+    output && typeof output === "object" && !Array.isArray(output)
+      ? { ...(previous as Record<string, unknown>), ...(output as Record<string, unknown>) }
+      : output;
   record.durationMs = Date.now() - record.startMs;
   void saveTraceRecord(record);
 }

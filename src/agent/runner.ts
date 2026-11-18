@@ -78,6 +78,49 @@ function toolEventKey(event: ToolEvent): string {
   return [event.turnId, event.name, event.summary, event.ms].join("|");
 }
 
+function traceText(value: unknown, limit = 500): string {
+  const text = String(value ?? "");
+  return text.length <= limit ? text : `${text.slice(0, limit)}…`;
+}
+
+function summarizeNodeInput(input: unknown): unknown {
+  if (!input || typeof input !== "object") return input;
+  const state = input as Record<string, unknown>;
+  const messages = Array.isArray(state.messages) ? state.messages : [];
+  return {
+    messages: messages.length,
+    lastMessage: messages.length ? traceText((messages.at(-1) as { content?: unknown })?.content) : "",
+    constraints: state.constraints ?? {},
+    candidates: Array.isArray(state.candidates) ? state.candidates.length : 0,
+    intent: state.intent ?? "unknown",
+    executionMode: state.executionMode ?? "direct",
+    contextSummary: traceText(state.contextSummary),
+  };
+}
+
+function summarizeNodeOutput(result: unknown): unknown {
+  const updates = Array.isArray(result) ? result : [];
+  const merged: Record<string, unknown> = {};
+  for (const item of updates) {
+    if (Array.isArray(item) && item[1] && typeof item[1] === "object") {
+      Object.assign(merged, item[1] as Record<string, unknown>);
+    }
+  }
+  if (!updates.length && result && typeof result === "object") Object.assign(merged, result as Record<string, unknown>);
+  return {
+    keys: Object.keys(merged),
+    intent: merged.intent,
+    stage: merged.stage,
+    executionMode: merged.executionMode,
+    executionRouteSource: merged.executionRouteSource,
+    candidates: Array.isArray(merged.candidates) ? merged.candidates.length : undefined,
+    comparison: Boolean(merged.comparison),
+    citations: Array.isArray(merged.citations) ? merged.citations.length : undefined,
+    answerLength: typeof merged.answer === "string" ? merged.answer.length : undefined,
+    toolEvents: Array.isArray(merged.toolEvents) ? merged.toolEvents.map((event) => (event as ToolEvent).name) : undefined,
+  };
+}
+
 export async function runAdvisorTurn(
   input: TurnInput,
   onProgress?: TurnProgressHandler
@@ -98,6 +141,7 @@ export async function runAdvisorTurn(
     ? new Command({ resume: input.resume })
     : {
         sessionId: input.sessionId,
+        traceId: trace.id,
         userId: input.userId ?? "anonymous",
         messages: [{ role: "user" as const, content: input.message ?? "" }],
       };
@@ -112,14 +156,27 @@ export async function runAdvisorTurn(
       streamMode: "tasks",
     } as any);
     const emittedTools = new Set<string>();
+    const activeTasks = new Map<string, { startMs: number; input: unknown }>();
 
     for await (const raw of stream) {
       const task = raw as TaskStreamEvent;
       // input 表示节点开始
       if ("input" in task) {
+        activeTasks.set(task.id, { startMs: Date.now(), input: summarizeNodeInput(task.input) });
         const progress = getNodeProgress(task.name);
         if (progress) onProgress?.({ event: "stage", ...progress, node: task.name });
         continue;
+      }
+
+      const active = activeTasks.get(task.id);
+      if (active) {
+        trace.addSpan(
+          `node:${task.name}`,
+          active.input,
+          summarizeNodeOutput(task.result),
+          Date.now() - active.startMs
+        );
+        activeTasks.delete(task.id);
       }
 
       const updates: Array<[string, Record<string, unknown>]> = Array.isArray(task.result)
@@ -174,7 +231,16 @@ export async function runAdvisorTurn(
   // 图在 interrupt 处暂停：把问题返回给前端
   if (result.__interrupt__?.length) {
     const payload = result.__interrupt__[0]?.value ?? {};
-    trace.end({ interrupted: true, question: payload.question });
+    trace.end({
+      interrupted: true,
+      question: payload.question,
+      intent: result.intent,
+      intentSource: result.intentSource ?? "rule",
+      executionMode: result.executionMode ?? "direct",
+      executionRouteSource: result.executionRouteSource ?? "rule",
+      contextCompressed: Boolean(result.contextCompressed),
+      contextEstimatedTokens: result.contextEstimatedTokens ?? 0,
+    });
 
     // 中断也要记录对话（否则刷新后看不到"我预约了但还没确认"）
     const prev = (await getSessionState(input.sessionId)) ?? {};
@@ -251,9 +317,14 @@ export async function runAdvisorTurn(
 
   trace.end({
     stage: result.stage,
+    intent: result.intent,
+    intentSource: result.intentSource ?? "rule",
+    executionMode: result.executionMode ?? "direct",
+    executionRouteSource: result.executionRouteSource ?? "rule",
+    contextCompressed: Boolean(result.contextCompressed),
+    contextEstimatedTokens: result.contextEstimatedTokens ?? 0,
     answerLength: guarded.text.length,
     guardrailWarnings: guarded.warnings,
-    intentSource: result.intentSource ?? "rule",
   });
 
   return {

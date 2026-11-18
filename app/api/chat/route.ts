@@ -78,7 +78,15 @@ export async function POST(req: NextRequest) {
             sendTool(progress.tool);
           }
         });
-        send("trace", { traceId: result.traceId });
+        send("trace", {
+          traceId: result.traceId,
+          intent: result.intent ?? "unknown",
+          intentSource: result.intentSource ?? "rule",
+          executionMode: result.executionMode ?? "direct",
+          executionRouteSource: result.executionRouteSource ?? "rule",
+          contextCompressed: Boolean(result.contextCompressed),
+          contextEstimatedTokens: result.contextEstimatedTokens ?? 0,
+        });
 
         // 人机协同：图在 interrupt 处暂停
         if (result.interrupted) {
@@ -123,7 +131,13 @@ export async function POST(req: NextRequest) {
         finishTrace(result.traceId, { stage: result.stage, llmMs, fallback: llmFallback, skipped: Boolean(result.skipPolish) });
 
         send("quickReplies", { options: ["看对比", "估算落地价", "聊聊口碑", "预约试驾"] });
-        send("done", { mode: result.mode, stage: result.stage });
+        send("done", {
+          mode: result.mode,
+          stage: result.stage,
+          intent: result.intent ?? "unknown",
+          executionMode: result.executionMode ?? "direct",
+          executionRouteSource: result.executionRouteSource ?? "rule",
+        });
       } catch (err) {
         console.error("[api/chat]", err);
         send("error", { message: (err as Error).message });

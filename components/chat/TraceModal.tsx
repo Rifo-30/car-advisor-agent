@@ -25,6 +25,11 @@ export default function TraceModal({ open, loading, data, onClose }: Props) {
               <span>ID：{data.id}</span>
               <span>总耗时：{data.durationMs ?? "-"} ms</span>
               <span>会话：{data.sessionId}</span>
+              <span>执行模式：{data.output?.executionMode ?? "-"}</span>
+              <span>路由来源：{data.output?.executionRouteSource ?? "-"}</span>
+              <span>意图：{data.output?.intent ?? "-"}</span>
+              <span>上下文压缩：{data.output?.contextCompressed ? "是" : "否"}</span>
+              <span>上下文 Token：{data.output?.contextEstimatedTokens ?? "-"}</span>
             </div>
             <div className="trace-list">
               {(data.spans ?? []).map((sp: any, i: number) => (

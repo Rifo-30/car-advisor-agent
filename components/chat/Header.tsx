@@ -1,16 +1,22 @@
 "use client";
 
-import type { Health } from "./types";
+import type { Health, TraceMeta } from "./types";
 
 interface Props {
   health: Health | null;
   traceId: string;
+  traceMeta: TraceMeta | null;
   onHistory: () => void;
   onNewSession: () => void;
   onTrace: () => void;
 }
 
-export default function Header({ health, traceId, onHistory, onNewSession, onTrace }: Props) {
+export default function Header({ health, traceId, traceMeta, onHistory, onNewSession, onTrace }: Props) {
+  const modeLabel: Record<string, string> = {
+    direct: "确定性工作流",
+    tool_loop: "自主工具循环",
+    clarify: "澄清",
+  };
   return (
     <header className="header">
       <div className="brand">
@@ -42,9 +48,16 @@ export default function Header({ health, traceId, onHistory, onNewSession, onTra
           新对话
         </button>
         {traceId && (
-          <button className="badge trace-btn" onClick={onTrace}>
-            查看 Trace
-          </button>
+          <>
+            {traceMeta?.executionMode && (
+              <span className="badge" title={`路由来源：${traceMeta.executionRouteSource ?? "rule"}`}>
+                模式 · {modeLabel[traceMeta.executionMode] ?? traceMeta.executionMode}
+              </span>
+            )}
+            <button className="badge trace-btn" onClick={onTrace}>
+              查看 Trace
+            </button>
+          </>
         )}
       </div>
     </header>

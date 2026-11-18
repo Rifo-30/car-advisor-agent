@@ -23,6 +23,15 @@ export interface Interrupt {
   question: string;
 }
 
+export interface TraceMeta {
+  intent?: string;
+  intentSource?: string;
+  executionMode?: string;
+  executionRouteSource?: string;
+  contextCompressed?: boolean;
+  contextEstimatedTokens?: number;
+}
+
 export interface ServiceStatus {
   configured: boolean;
   connected: boolean;
