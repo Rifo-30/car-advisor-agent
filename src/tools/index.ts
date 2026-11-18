@@ -1,6 +1,6 @@
 // ============================================================
-// 工具层（Function Calling 的「真实实现」）
-// 面试要点：LLM 只负责决定调用哪个工具，真正执行与鉴权在这里。
+// 工具层：固定工作流由 LangGraph 节点调用；研究子流程由 LLM 自主选择只读工具。
+// 面试要点：真正执行、参数校验、权限与副作用必须留在后端。
 // ============================================================
 import type { Candidate, CarModel, Comparison, EnergyType, Review, Variant } from "../types";
 import { getAllCars } from "../db/repo";

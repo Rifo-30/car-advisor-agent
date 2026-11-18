@@ -49,6 +49,7 @@ const NODE_PROGRESS: Record<string, { stage: string; label: string }> = {
   reviews: { stage: "researching", label: "正在检索真实口碑…" },
   confirm: { stage: "confirming", label: "正在准备预约信息…" },
   smalltalk: { stage: "responding", label: "正在组织回答…" },
+  research: { stage: "researching_tools", label: "正在规划并调用工具…" },
 };
 
 export function getNodeProgress(node: string): { stage: string; label: string } | null {
@@ -237,7 +238,7 @@ export async function runAdvisorTurn(
     toolEvents: turnEvents,
     stage: result.stage ?? "recommend",
     mode: hasLLM() ? "live" : "mock",
-    skipPolish: result.intent === "smalltalk",
+    skipPolish: result.intent === "smalltalk" || result.intent === "research",
     intentSource: result.intentSource ?? "rule",
   };
 }

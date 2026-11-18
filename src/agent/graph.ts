@@ -28,6 +28,7 @@ import { searchCars, compareCars, estimatePrice, searchReviews, createTestDriveL
 import { getAllCars } from "../db/repo";
 import { applyBudgetDelta, resolveTurnContext } from "./context";
 import { rewriteReviewQuery } from "../rag/queryRewrite";
+import { runResearchAgent } from "./toolAgent";
 
 // ---------- 1. 定义状态 ----------
 /**
@@ -190,6 +191,8 @@ function routeFromClassify(state: State): string {
       return state.targetModelId || hasCandidates ? "quote" : needMoreInfo(state) ? "clarify" : "retrieve";
     case "reviews":
       return state.targetModelId || hasCandidates ? "reviews" : needMoreInfo(state) ? "clarify" : "retrieve";
+    case "research":
+      return needMoreInfo(state) ? "clarify" : "research";
     case "recommend":
       return needMoreInfo(state) ? "clarify" : "retrieve";
     default:
@@ -398,6 +401,27 @@ async function reviewsNode(state: State) {
   };
 }
 
+// ---------- 8.5 节点：受控 Tool Calling 研究循环 ----------
+async function researchAgentNode(state: State) {
+  const result = await runResearchAgent({
+    query: state.messages.at(-1)?.content ?? "",
+    turnId: state.turnId,
+    constraints: state.constraints,
+    candidates: state.candidates,
+    targetModelId: state.targetModelId,
+    targetModelIds: state.targetModelIds,
+  });
+
+  return {
+    answer: result.answer,
+    candidates: result.candidates,
+    comparison: result.comparison ?? null,
+    citations: result.citations,
+    toolEvents: result.toolEvents,
+    stage: "recommend" as Stage,
+  };
+}
+
 // ---------- 9. 节点：预约（Human-in-the-loop） ----------
 async function confirmNode(state: State) {
   const cars = await getAllCars();
@@ -523,6 +547,7 @@ function buildGraph(checkpointer: any) {
     .addNode("compare", compareNode)
     .addNode("quote", quoteNode)
     .addNode("reviews", reviewsNode)
+    .addNode("research", researchAgentNode)
     .addNode("confirm", confirmNode)
     .addNode("smalltalk", smalltalkNode)
     .addEdge(START, "classify")
@@ -533,6 +558,7 @@ function buildGraph(checkpointer: any) {
       compare: "compare",
       quote: "quote",
       reviews: "reviews",
+      research: "research",
       confirm: "confirm",
     })
     .addEdge("clarify", END)
@@ -540,6 +566,7 @@ function buildGraph(checkpointer: any) {
     .addEdge("compare", END)
     .addEdge("quote", END)
     .addEdge("reviews", END)
+    .addEdge("research", END)
     .addEdge("confirm", END)
     .addEdge("smalltalk", END)
     .compile({ checkpointer });

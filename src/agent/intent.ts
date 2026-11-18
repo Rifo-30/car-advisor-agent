@@ -12,6 +12,7 @@ export type Intent =
   | "compare"
   | "price"
   | "reviews"
+  | "research"
   | "book"
   | "confirm"
   | "unknown";
@@ -25,6 +26,18 @@ export interface ParsedMessage {
   budgetDelta?: number;
   /** 弱意图：命中了意图关键词但证据不足（如只说"比较"却没点名车型），允许模型覆盖 */
   weakIntent?: boolean;
+}
+
+/** 只有明确的“先做 A 再做 B”多目标任务才进入自主工具循环 */
+export function isMultiStepResearch(text: string): boolean {
+  const taskSignals = [
+    /推荐|筛选|找|选车/,
+    /对比|比较/,
+    /口碑|评价|缺点|优点/,
+    /落地|报价|多少钱|价格/,
+  ].filter((pattern) => pattern.test(text)).length;
+  const sequence = /先.*(?:再|然后)|再.*(?:然后|并|同时)|然后|并且|同时|顺便|一起|综合/;
+  return taskSignals >= 2 && sequence.test(text);
 }
 
 const CITY_LIST = ["北京", "上海", "广州", "深圳", "杭州", "成都", "武汉", "南京", "西安", "重庆", "苏州", "天津"];
@@ -188,6 +201,7 @@ export function parseMessage(text: string, candidates: Candidate[], cars: CarMod
   // 顺序很重要：寒暄 > 预约 > 对比 > 价格 > 口碑 > 推荐
   if (identity.test(text) || greeting.test(text) || thanks.test(text)) intent = "smalltalk";
   else if (/试驾|预约|到店|看车/.test(text)) intent = "book";
+  else if (isMultiStepResearch(text)) intent = "research";
   // ⭐ 收紧对比意图：裸"比较"会误伤"比较远/比较贵/比较省油"，改成明确的对比表达
   else if (/对比|差异|区别|哪个好|哪款好|哪个更|比较一下|比较下|比较这|比较那|相比/.test(text)) intent = "compare";
   else if (/落地|多少钱|价格|优惠|报价/.test(text)) intent = "price";

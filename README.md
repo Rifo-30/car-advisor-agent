@@ -122,7 +122,7 @@ src/
   cache/redis.ts           Redis 缓存 + 内存降级
   observability/trace.ts   Langfuse + 本地 trace
   guardrails/guard.ts      ⭐ 广告法 / PII / 注入检测
-  eval/eval.ts             ⭐ 26 条评测用例
+  eval/eval.ts             ⭐ 27 条评测用例
 ```
 
 ---
@@ -165,7 +165,21 @@ src/
 高速、噪音/NVH、舒适性和口碑关键词的检索 query。规则 query 始终可用；指代或
 主题不足时可在 `RAG_QUERY_REWRITE_ENABLED=true` 下调用模型补全，失败自动回退。
 
-### 5.4 人机协同（Human-in-the-loop）
+### 5.4 受控 Tool Calling（混合编排）
+
+不是所有请求都交给自主 Agent：
+
+- 推荐、对比、报价、预约等确定性流程继续走固定 LangGraph 节点；
+- 检测到「先筛选，再对比，然后看口碑/算价格」等多目标链路时进入 `research` 节点；
+- `research` 使用 `ChatOpenAI.bindTools()`，由模型自主返回 `tool_calls`；
+- 后端校验参数、执行只读工具，并把 Observation 作为 `ToolMessage` 回填模型；
+- 最多循环 `TOOL_AGENT_MAX_STEPS` 次，重复调用、未知工具和工具异常都会作为 Observation 返回；
+- 自主循环只暴露 `search_cars / get_car_detail / compare_cars / estimate_price / search_reviews`；
+- 预约等写操作不进入自主循环，仍走原 Human-in-the-loop。
+
+无模型或关闭 `TOOL_AGENT_ENABLED` 时，会降级为确定性的多工具计划。
+
+### 5.5 人机协同（Human-in-the-loop）
 
 `src/agent/graph.ts` 的 `confirmNode`：
 
@@ -181,14 +195,14 @@ const phoneReply = interrupt({ type: "phone", question: "请提供手机号" });
 - 用户回复后，`new Command({ resume })` 从 **checkpoint** 继续，不重跑已完成步骤；
 - 预约提交前**服务端强制校验 `confirmed`**，不信任前端/模型。
 
-### 5.5 护栏在代码层，不只在 prompt
+### 5.6 护栏在代码层，不只在 prompt
 
 - 注入检测：`detectInjection()`（HTTP 层拦截）
 - 广告法：绝对化用语自动替换 + 价格免责声明
 - PII：手机号脱敏展示、哈希存储
 - 工具鉴权：`create_test_drive_lead` 校验 `confirmed` 与手机号格式
 
-### 5.6 外部依赖全部可降级
+### 5.7 外部依赖全部可降级
 
 | 依赖 | 缺失时 |
 | --- | --- |
@@ -237,14 +251,14 @@ const phoneReply = interrupt({ type: "phone", question: "请提供手机号" });
 1. **全链路**：Next.js 前端 → API → LangGraph 编排 → 工具 → RAG → 数据层 → 可观测。
 2. **可解释推荐**：每款车给出"为什么推荐 + 短板"，且可追溯到结构化字段。
 3. **真实 HITL**：`interrupt()` + Checkpointer 实现"确认 → 手机号 → 提交"的暂停恢复。
-4. **工程化**：26 条评测集（100% 通过）、trace、SSE、注入/广告法护栏。
+4. **工程化**：27 条评测集（100% 通过）、trace、SSE、注入/广告法护栏。
 5. **可降级**：无 Key、无数据库都能跑，适合演示与面试现场。
 
 ### 面试讲法（60 秒版）
 
 > 我做了一个汽车垂类的选车决策 Agent。核心判断是：**LLM 不能作为事实来源**。所以车型参数和价格全部走结构化数据，LLM 只负责理解需求和表达。
 > 编排用 LangGraph，把"澄清→筛选→推荐→对比→报价→预约"做成状态机；预约环节用 `interrupt()` 实现人工确认，`Command(resume)` 从 checkpoint 恢复。
-> 工程上配了 26 条评测集做回归，接了 trace 看每一步工具调用，并做了广告法、注入、PII 三层护栏。
+> 工程上配了 27 条评测集做回归，接了 trace 看每一步工具调用，并做了广告法、注入、PII 三层护栏。
 > 外部依赖全部可降级：没有 Key 也能完整演示。
 
 ---
@@ -384,8 +398,8 @@ agent.turn
 
 ```bash
 pnpm typecheck   # tsc --noEmit
-pnpm test        # 62 个单元测试（node:test）
-pnpm eval        # 26 条端到端评测
+pnpm test        # 67 个单元测试（node:test）
+pnpm eval        # 27 条端到端评测
 ```
 
 ### Trace 持久化
@@ -421,8 +435,8 @@ components/
 ```bash
 pnpm typecheck   # TypeScript 类型检查
 pnpm lint        # ESLint（0 errors）
-pnpm test        # 62 个单元测试
-pnpm eval        # 26 条端到端评测
+pnpm test        # 67 个单元测试
+pnpm eval        # 27 条端到端评测
 pnpm build       # 生产构建
 ```
 

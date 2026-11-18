@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseMessage } from "../src/agent/intent";
+import { isMultiStepResearch, parseMessage } from "../src/agent/intent";
 import { CARS } from "../src/data/cars";
 import type { Candidate } from "../src/types";
 
@@ -62,4 +62,10 @@ test("候选上下文中的口碑属性问题应识别为 reviews", () => {
   const candidates = [{ modelId: "yt-x1" }] as unknown as Candidate[];
   assert.equal(parseMessage("这车高速噪音大吗", candidates, CARS).intent, "reviews");
   assert.equal(parseMessage("它空间怎么样", candidates, CARS).intent, "reviews");
+});
+
+test("明确的多步任务才识别为 research", () => {
+  assert.equal(isMultiStepResearch("帮我找15万家用SUV，再对比前两款，然后看口碑"), true);
+  assert.equal(isMultiStepResearch("对比前两款"), false);
+  assert.equal(isMultiStepResearch("15万左右，家用，推荐什么车"), false);
 });

@@ -24,6 +24,7 @@ export const ALLOWED_INTENTS = [
   "compare",
   "price",
   "reviews",
+  "research",
   "book",
   "smalltalk",
   "clarify",
@@ -118,7 +119,7 @@ export function validateModelIntent(raw: unknown): ModelIntentResult | null {
 const SYSTEM_PROMPT = `你是选车助手的意图抽取器。只输出 JSON，不要输出任何解释、不要输出 Markdown。
 
 输出字段：
-- intent：只能是 recommend | compare | price | reviews | book | smalltalk | clarify
+- intent：只能是 recommend | compare | price | reviews | research | book | smalltalk | clarify
 - usage：用途数组，只能从 [家用, 通勤, 长途, 通过性, 省油, 空间] 中选
 - energy：能源数组，只能从 [燃油, 混动, 纯电] 中选
 - seats：整数 2~7
@@ -139,7 +140,8 @@ const SYSTEM_PROMPT = `你是选车助手的意图抽取器。只输出 JSON，�
 7. 如果文本里给了"十几万""二十以内"这类模糊预算，给出你理解的区间并降低 confidence。
 8. "再加两万"只输出 budgetDelta: 2，不要计算最终预算。
 9. "便宜一万"只输出 budgetDelta: -1，不要计算最终预算。
-10. 明确的新预算如"改成7万"用 budgetMin/budgetMax；同一轮不要同时输出绝对预算和 budgetDelta。`;
+10. 明确的新预算如"改成7万"用 budgetMin/budgetMax；同一轮不要同时输出绝对预算和 budgetDelta。
+11. "先筛选，再对比，然后看口碑/算价格"这类多目标链式任务，intent 用 "research"。`;
 
 function buildHumanMessage(
   text: string,

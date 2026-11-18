@@ -1,5 +1,5 @@
 // ============================================================
-// 评测脚本：20 条黄金用例，覆盖推荐/澄清/对比/报价/口碑/预约/安全
+// 评测脚本：黄金用例覆盖推荐/澄清/对比/报价/口碑/研究/预约/安全
 // 用法：pnpm eval（不需要 API Key，mock 模式也能跑）
 // 面试要点：
 // 1) 结果用「规则断言」保证事实与约束，用 LLM 裁判评估表达质量；
@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import { runAdvisorTurn, type TurnResult } from "../agent/runner";
 import { detectInjection, sanitizeInput, applyOutputGuardrails } from "../guardrails/guard";
 
-type Category = "推荐" | "澄清" | "闲聊" | "对比" | "报价" | "口碑" | "预约" | "安全";
+type Category = "推荐" | "澄清" | "闲聊" | "对比" | "报价" | "口碑" | "研究" | "预约" | "安全";
 
 interface Case {
   id: string;
@@ -53,6 +53,8 @@ const cases: Case[] = [
   { id: "rev-01", category: "口碑", steps: ["15万左右，家用", "这车口碑怎么样"], expect: { hasCitations: true } },
   { id: "rev-02", category: "口碑", steps: ["纯电15万左右", "有什么缺点"], expect: { hasCitations: true } },
   { id: "rev-03", category: "口碑", steps: ["10万左右，家用，推荐什么车", "这车高速噪音大吗"], expect: { hasCitations: true } },
+
+  { id: "res-01", category: "研究", steps: ["帮我找15万左右的家用SUV，再对比前两款，然后看口碑"], expect: { hasCandidates: true, hasComparison: true, hasCitations: true } },
 
   { id: "bok-01", category: "预约", steps: ["15万左右，家用", "预约试驾"], expect: { hasInterrupted: true } },
   {
