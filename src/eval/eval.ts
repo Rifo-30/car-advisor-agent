@@ -185,6 +185,10 @@ function checkExpect(c: Case, result: TurnResult): string[] {
   if (e.contains) details.push(result.answer.includes(e.contains) ? "✓关键词" : "✗关键词");
   if (e.notContains) details.push(e.notContains.every((word) => !result.answer.includes(word)) ? "✓无违禁词" : "✗无违禁词");
   if (c.intent) details.push(result.intent === c.intent ? "✓意图" : `✗意图(${result.intent})`);
+  if (c.intent) {
+    const expectedMode = c.intent === "research" ? "tool_loop" : "direct";
+    details.push(result.executionMode === expectedMode ? "✓执行模式" : `✗执行模式(${result.executionMode})`);
+  }
   if (c.tools) details.push(toolsMatch(c, result) ? "✓工具" : `✗工具(${result.toolEvents.map((event) => event.name).join(",")})`);
   if (c.toolArgs) details.push(toolArgsMatch(c, result) ? "✓参数" : "✗参数");
   return details;
@@ -285,6 +289,10 @@ async function main() {
   const intentAccuracy = intentItems.length ? intentItems.filter((item) => item.result?.intent === item.c.intent).length / intentItems.length : 0;
   const toolItems = results.filter((item) => item.c.tools != null);
   const toolAccuracy = toolItems.length ? toolItems.filter((item) => item.result && toolsMatch(item.c, item.result)).length / toolItems.length : 0;
+  const executionItems = results.filter((item) => item.c.intent != null);
+  const executionAccuracy = executionItems.length
+    ? executionItems.filter((item) => item.result?.executionMode === (item.c.intent === "research" ? "tool_loop" : "direct")).length / executionItems.length
+    : 0;
   const argItems = results.filter((item) => item.c.toolArgs != null);
   const argAccuracy = argItems.length ? argItems.filter((item) => item.result && toolArgsMatch(item.c, item.result)).length / argItems.length : 0;
   const multiTurnItems = results.filter((item) => item.c.steps.length > 1 || (item.c.resumes?.length ?? 0) > 0);
@@ -321,6 +329,7 @@ async function main() {
   console.log(`总体通过率       ${(passRate * 100).toFixed(1)}% (${pass}/${total})`);
   console.log(`意图准确率       ${(intentAccuracy * 100).toFixed(1)}%`);
   console.log(`工具选择准确率   ${(toolAccuracy * 100).toFixed(1)}%`);
+  console.log(`执行模式准确率   ${(executionAccuracy * 100).toFixed(1)}%`);
   console.log(`工具参数正确率   ${argItems.length ? `${(argAccuracy * 100).toFixed(1)}%` : "N/A"}`);
   console.log(`多轮任务成功率   ${(multiTurnSuccess * 100).toFixed(1)}%`);
   console.log(`RAG Recall@3     ${(ragRecall * 100).toFixed(1)}%`);
@@ -337,6 +346,7 @@ async function main() {
   const minPass = Number(process.env.EVAL_MIN_PASS_RATE ?? 0.9);
   const minIntent = Number(process.env.EVAL_MIN_INTENT ?? 0.9);
   const minTools = Number(process.env.EVAL_MIN_TOOL_SELECTION ?? 0.9);
+  const minExecution = Number(process.env.EVAL_MIN_EXECUTION_MODE ?? 0.9);
   const minArgs = Number(process.env.EVAL_MIN_TOOL_ARGS ?? 0.85);
   const minMulti = Number(process.env.EVAL_MIN_MULTI_TURN ?? 0.9);
   const minCitation = Number(process.env.EVAL_MIN_CITATION_SUPPORT ?? 0.8);
@@ -350,6 +360,7 @@ async function main() {
   if (passRate < minPass) failures.push(`总体通过率 ${(passRate * 100).toFixed(1)}% < ${(minPass * 100).toFixed(1)}%`);
   if (intentItems.length && intentAccuracy < minIntent) failures.push(`意图准确率 ${(intentAccuracy * 100).toFixed(1)}% < ${(minIntent * 100).toFixed(1)}%`);
   if (toolItems.length && toolAccuracy < minTools) failures.push(`工具选择准确率 ${(toolAccuracy * 100).toFixed(1)}% < ${(minTools * 100).toFixed(1)}%`);
+  if (executionItems.length && executionAccuracy < minExecution) failures.push(`执行模式准确率 ${(executionAccuracy * 100).toFixed(1)}% < ${(minExecution * 100).toFixed(1)}%`);
   if (argItems.length && argAccuracy < minArgs) failures.push(`工具参数正确率 ${(argAccuracy * 100).toFixed(1)}% < ${(minArgs * 100).toFixed(1)}%`);
   if (multiTurnItems.length && multiTurnSuccess < minMulti) failures.push(`多轮任务成功率 ${(multiTurnSuccess * 100).toFixed(1)}% < ${(minMulti * 100).toFixed(1)}%`);
   if (citationItems.length && citationSupport < minCitation) failures.push(`引用支持度 ${(citationSupport * 100).toFixed(1)}% < ${(minCitation * 100).toFixed(1)}%`);

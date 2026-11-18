@@ -40,6 +40,8 @@ export interface TurnResult {
   contextEstimatedTokens?: number;
   /** 本轮是否触发历史压缩 */
   contextCompressed?: boolean;
+  executionMode?: string;
+  executionRouteSource?: string;
 }
 
 export type TurnProgressEvent =
@@ -209,6 +211,8 @@ export async function runAdvisorTurn(
       agentSteps: 0,
       contextEstimatedTokens: result.contextEstimatedTokens ?? 0,
       contextCompressed: Boolean(result.contextCompressed),
+      executionMode: result.executionMode ?? "direct",
+      executionRouteSource: result.executionRouteSource ?? "rule",
     };
   }
 
@@ -268,6 +272,8 @@ export async function runAdvisorTurn(
     agentSteps: result.agentSteps ?? turnEvents.length,
     contextEstimatedTokens: result.contextEstimatedTokens ?? 0,
     contextCompressed: Boolean(result.contextCompressed),
+    executionMode: result.executionMode ?? "direct",
+    executionRouteSource: result.executionRouteSource ?? "rule",
   };
 }
 

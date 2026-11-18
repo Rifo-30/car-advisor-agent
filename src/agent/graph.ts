@@ -31,6 +31,7 @@ import { rewriteReviewQuery } from "../rag/queryRewrite";
 import { runResearchAgent } from "./toolAgent";
 import { buildReviewFocus } from "./reviewAnswer";
 import { compressContext } from "./contextCompression";
+import { routeExecutionMode } from "./executionRouter";
 
 // ---------- 1. 定义状态 ----------
 /**
@@ -50,6 +51,8 @@ const AdvisorState = Annotation.Root({
   contextSummarizedCount: Annotation<number>({ reducer: (_a, b) => b, default: () => 0 }),
   contextEstimatedTokens: Annotation<number>({ reducer: (_a, b) => b, default: () => 0 }),
   contextCompressed: Annotation<boolean>({ reducer: (_a, b) => b, default: () => false }),
+  executionMode: Annotation<string>({ reducer: (_a, b) => b, default: () => "direct" }),
+  executionRouteSource: Annotation<string>({ reducer: (_a, b) => b, default: () => "rule" }),
   constraints: Annotation<Constraints>({
     reducer: (a, b) => ({ ...a, ...b }),     // 约束合并：后到的覆盖先前的
     default: () => ({}),
@@ -192,6 +195,13 @@ async function classifyNode(state: State) {
           .map((message) => message.content),
       }).catch(() => "")
     : "";
+  const executionRoute = await routeExecutionMode({
+    text,
+    intent,
+    constraints: nextConstraints,
+    candidates: state.candidates,
+    contextSummary: state.contextSummary,
+  });
 
   return {
     turnId: randomUUID(),   // 每轮唯一 ID：前端只展示本轮工具事件
@@ -203,6 +213,8 @@ async function classifyNode(state: State) {
     budgetDelta: resolvedBudgetDelta,
     budgetDeltaError,
     retrievalQuery,
+    executionMode: executionRoute.mode,
+    executionRouteSource: executionRoute.source,
     intentSource,
     stage: "clarify" as Stage,
   };
@@ -219,6 +231,11 @@ function needMoreInfo(state: State): boolean {
 
 function routeFromClassify(state: State): string {
   const hasCandidates = state.candidates.length > 0;
+
+  if (state.executionMode === "clarify") return "clarify";
+  if (state.executionMode === "tool_loop") {
+    return needMoreInfo(state) ? "clarify" : "research";
+  }
 
   switch (state.intent) {
     case "smalltalk":

@@ -83,6 +83,7 @@ pnpm eval:live   # 加载 .env，使用真实模型与 LLM-as-judge
 
 - 意图准确率
 - 工具选择准确率
+- 执行模式准确率
 - 工具参数正确率
 - 多轮任务成功率
 - RAG Recall@3 / MRR
@@ -217,7 +218,21 @@ CONTEXT_SUMMARY_MODEL_ENABLED=true
 CONTEXT_SUMMARY_MODEL_THRESHOLD=300
 ```
 
-### 5.5 受控 Tool Calling（混合编排）
+### 5.5 执行模式路由：规则优先，LLM 兜底
+
+- 明确单步请求（筛选、报价、预约）直接走固定工作流；
+- 明确多步请求（先筛选、再对比、看口碑）直接走 `tool_loop`；
+- 只有规则模糊且包含“研究 / 综合 / 值得买 / 帮我看看”等语义时，才调用 LLM Router；
+- LLM 只输出 `direct | tool_loop | clarify`，不直接执行工具；
+- 低置信度、非法输出或超时自动回退规则路由；
+- 预约、试驾、提交、支付等写操作强制 `direct + HITL`，模型不能提升为自主循环。
+
+核心代码：
+
+- `src/agent/executionRouter.ts`
+- `EXECUTION_ROUTER_ENABLED=true`
+
+### 5.6 受控 Tool Calling（混合编排）
 
 不是所有请求都交给自主 Agent：
 
@@ -231,7 +246,7 @@ CONTEXT_SUMMARY_MODEL_THRESHOLD=300
 
 无模型或关闭 `TOOL_AGENT_ENABLED` 时，会降级为确定性的多工具计划。
 
-### 5.6 人机协同（Human-in-the-loop）
+### 5.7 人机协同（Human-in-the-loop）
 
 `src/agent/graph.ts` 的 `confirmNode`：
 
@@ -247,14 +262,14 @@ const phoneReply = interrupt({ type: "phone", question: "请提供手机号" });
 - 用户回复后，`new Command({ resume })` 从 **checkpoint** 继续，不重跑已完成步骤；
 - 预约提交前**服务端强制校验 `confirmed`**，不信任前端/模型。
 
-### 5.7 护栏在代码层，不只在 prompt
+### 5.8 护栏在代码层，不只在 prompt
 
 - 注入检测：`detectInjection()`（HTTP 层拦截）
 - 广告法：绝对化用语自动替换 + 价格免责声明
 - PII：手机号脱敏展示、哈希存储
 - 工具鉴权：`create_test_drive_lead` 校验 `confirmed` 与手机号格式
 
-### 5.8 外部依赖全部可降级
+### 5.9 外部依赖全部可降级
 
 | 依赖 | 缺失时 |
 | --- | --- |
@@ -450,7 +465,7 @@ agent.turn
 
 ```bash
 pnpm typecheck   # tsc --noEmit
-pnpm test        # 74 个单元测试（node:test）
+pnpm test        # 79 个单元测试（node:test）
 pnpm eval        # 28 条端到端评测
 ```
 
@@ -487,7 +502,7 @@ components/
 ```bash
 pnpm typecheck   # TypeScript 类型检查
 pnpm lint        # ESLint（0 errors）
-pnpm test        # 74 个单元测试
+pnpm test        # 79 个单元测试
 pnpm eval        # 28 条端到端评测
 pnpm build       # 生产构建
 ```
