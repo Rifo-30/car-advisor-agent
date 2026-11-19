@@ -30,6 +30,7 @@ export interface TraceMeta {
   executionRouteSource?: string;
   contextCompressed?: boolean;
   contextEstimatedTokens?: number;
+  routingStage?: string;
 }
 
 export interface ServiceStatus {

@@ -28,6 +28,8 @@ export default function TraceModal({ open, loading, data, onClose }: Props) {
               <span>执行模式：{data.output?.executionMode ?? "-"}</span>
               <span>路由来源：{data.output?.executionRouteSource ?? "-"}</span>
               <span>意图：{data.output?.intent ?? "-"}</span>
+              <span>路由阶段：{data.output?.routingStage ?? "-"}</span>
+              <span>业务阶段：{data.output?.stage ?? "-"}</span>
               <span>上下文压缩：{data.output?.contextCompressed ? "是" : "否"}</span>
               <span>上下文 Token：{data.output?.contextEstimatedTokens ?? "-"}</span>
             </div>

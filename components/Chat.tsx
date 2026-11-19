@@ -146,6 +146,7 @@ export default function Chat() {
               executionRouteSource: data.executionRouteSource,
               contextCompressed: data.contextCompressed,
               contextEstimatedTokens: data.contextEstimatedTokens,
+              routingStage: data.routingStage,
             });
             break;
           case "tool":

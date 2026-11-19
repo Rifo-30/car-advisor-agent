@@ -57,6 +57,8 @@ export type Stage =
   | "recommend"
   | "compare"
   | "quote"
+  | "reviews"
+  | "smalltalk"
   | "confirm"
   | "done";
 

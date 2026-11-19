@@ -42,6 +42,8 @@ export interface TurnResult {
   contextCompressed?: boolean;
   executionMode?: string;
   executionRouteSource?: string;
+  /** 图内部路由阶段，例如 classifying；区别于最终业务 stage */
+  routingStage?: string;
 }
 
 export type TurnProgressEvent =
@@ -211,7 +213,9 @@ export async function runAdvisorTurn(
     trace.end({ error: message });
     throw err;
   }
-  span.end({ stage: result.stage, interrupted: Boolean(result.__interrupt__?.length) });
+  const interruptType = result.__interrupt__?.[0]?.value?.type;
+  const spanStage = interruptType === "confirm" || interruptType === "phone" ? "confirm" : result.stage;
+  span.end({ stage: spanStage, interrupted: Boolean(result.__interrupt__?.length) });
 
   // 本轮产生的工具事件（状态里的 toolEvents 是累积的，需要按 turnId 过滤）
   const turnEvents = (result.toolEvents ?? []).filter(
@@ -231,7 +235,11 @@ export async function runAdvisorTurn(
   // 图在 interrupt 处暂停：把问题返回给前端
   if (result.__interrupt__?.length) {
     const payload = result.__interrupt__[0]?.value ?? {};
+    const interruptedStage = payload.type === "confirm" || payload.type === "phone"
+      ? "confirm"
+      : result.stage ?? "clarify";
     trace.end({
+      stage: interruptedStage,
       interrupted: true,
       question: payload.question,
       intent: result.intent,
@@ -240,6 +248,7 @@ export async function runAdvisorTurn(
       executionRouteSource: result.executionRouteSource ?? "rule",
       contextCompressed: Boolean(result.contextCompressed),
       contextEstimatedTokens: result.contextEstimatedTokens ?? 0,
+      routingStage: result.routingStage ?? "idle",
     });
 
     // 中断也要记录对话（否则刷新后看不到"我预约了但还没确认"）
@@ -254,7 +263,7 @@ export async function runAdvisorTurn(
     await saveSessionState(input.sessionId, {
       ...prev,
       userId: input.userId ?? prev.userId ?? "anonymous",
-      stage: result.stage ?? "confirm",
+      stage: interruptedStage,
       messages: [...prevMsgs, ...newMsgs],
       updatedAt: at,
     });
@@ -271,7 +280,7 @@ export async function runAdvisorTurn(
       citations: result.citations ?? [],
       // 只返回本轮产生的工具事件（状态里的 toolEvents 是累积的）
       toolEvents: turnEvents,
-      stage: result.stage ?? "confirm",
+      stage: interruptedStage,
       mode: hasLLM() ? "live" : "mock",
       intent: result.intent ?? "unknown",
       agentSteps: 0,
@@ -279,6 +288,7 @@ export async function runAdvisorTurn(
       contextCompressed: Boolean(result.contextCompressed),
       executionMode: result.executionMode ?? "direct",
       executionRouteSource: result.executionRouteSource ?? "rule",
+      routingStage: result.routingStage ?? "idle",
     };
   }
 
@@ -345,6 +355,7 @@ export async function runAdvisorTurn(
     contextCompressed: Boolean(result.contextCompressed),
     executionMode: result.executionMode ?? "direct",
     executionRouteSource: result.executionRouteSource ?? "rule",
+    routingStage: result.routingStage ?? "idle",
   };
 }
 

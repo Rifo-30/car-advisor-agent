@@ -86,6 +86,7 @@ export async function POST(req: NextRequest) {
           executionRouteSource: result.executionRouteSource ?? "rule",
           contextCompressed: Boolean(result.contextCompressed),
           contextEstimatedTokens: result.contextEstimatedTokens ?? 0,
+          routingStage: result.routingStage ?? "idle",
         });
 
         // 人机协同：图在 interrupt 处暂停
@@ -137,6 +138,7 @@ export async function POST(req: NextRequest) {
           intent: result.intent ?? "unknown",
           executionMode: result.executionMode ?? "direct",
           executionRouteSource: result.executionRouteSource ?? "rule",
+          routingStage: result.routingStage ?? "idle",
         });
       } catch (err) {
         console.error("[api/chat]", err);

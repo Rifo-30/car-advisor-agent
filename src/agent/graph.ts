@@ -63,6 +63,7 @@ const AdvisorState = Annotation.Root({
   /** 意图来源：rule / hybrid（规则 + 模型补充） */
   intentSource: Annotation<string>({ reducer: (_a, b) => b, default: () => "rule" }),
   stage: Annotation<Stage>({ reducer: (_a, b) => b, default: () => "clarify" }),
+  routingStage: Annotation<string>({ reducer: (_a, b) => b, default: () => "idle" }),
   candidates: Annotation<Candidate[]>({ reducer: (_a, b) => b, default: () => [] }),
   targetModelId: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }),
   targetModelIds: Annotation<string[]>({ reducer: (_a, b) => b, default: () => [] }),
@@ -231,7 +232,7 @@ async function classifyNode(state: State) {
     executionMode: executionRoute.mode,
     executionRouteSource: executionRoute.source,
     intentSource,
-    stage: "clarify" as Stage,
+    routingStage: "classifying",
   };
 }
 
@@ -492,7 +493,7 @@ async function reviewsNode(state: State) {
   return {
     answer,
     citations,
-    stage: "recommend" as Stage,
+    stage: "reviews" as Stage,
     toolEvents: [{ turnId: state.turnId, name: "search_reviews", args: { modelId: targetId, query }, summary: res.summary, ok: res.ok, ms: Date.now() - started }],
   };
 }
@@ -609,7 +610,7 @@ async function smalltalkNode() {
     "告诉我你的**预算**和**主要用途**（通勤/家用/长途），我们就可以开始。",
   ].join("\n");
 
-  return { answer, stage: "clarify" as Stage };
+  return { answer, stage: "smalltalk" as Stage };
 }
 
 // ---------- 11. 编译图（单例） ----------
