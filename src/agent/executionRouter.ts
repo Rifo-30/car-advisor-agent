@@ -37,11 +37,11 @@ const TOOL_SIGNALS = [
 ];
 
 function fallback(input: ExecutionRouteInput): ExecutionRouteResult {
-  if (HIGH_RISK.test(input.text)) {
-    return { mode: "direct", source: "fallback", confidence: 1, reason: "高风险或写操作强制走确定性流程" };
-  }
   if (input.intent === "research" || isMultiStepResearch(input.text)) {
     return { mode: "tool_loop", source: "rule", confidence: 1, reason: "命中明确多步任务规则" };
+  }
+  if (HIGH_RISK.test(input.text)) {
+    return { mode: "direct", source: "fallback", confidence: 1, reason: "高风险或写操作强制走确定性流程" };
   }
   if (input.intent === "unknown" && !input.candidates.length) {
     return { mode: "clarify", source: "fallback", confidence: 0.5, reason: "意图不明确且没有候选上下文" };

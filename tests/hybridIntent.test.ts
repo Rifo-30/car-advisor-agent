@@ -102,10 +102,11 @@ test("规则 budgetDelta 优先于模型 budgetDelta", () => {
 
 // ---------------- needsModelFallback ----------------
 
-test("带娃这类口语化表达应触发模型补充", () => {
+test("带娃这类口语化表达可直接解析为家用和空间", () => {
   const parsed = parseMessage("带娃推荐什么车", [], CARS);
   assert.equal(parsed.intent, "recommend");
-  assert.equal(needsModelFallback(parsed), true);   // 规则没识别出 usage
+  assert.deepEqual(parsed.constraints.usage, ["家用", "空间"]);
+  assert.equal(needsModelFallback(parsed), false);
 });
 
 test("规则已识别上下文时不触发模型", () => {

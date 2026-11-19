@@ -21,6 +21,7 @@ export interface ToolAgentContext {
   targetModelIds?: string[];
   contextSummary?: string;
   history?: ChatMessage[];
+  bookingRequested?: boolean;
 }
 
 export interface ToolAgentResult {
@@ -163,8 +164,8 @@ export function createReadOnlyTools(context: ToolAgentContext, state: ToolState)
   const compareTool = tool(
     async ({ modelIds }) => {
       const started = Date.now();
-      const fallback = context.targetModelIds?.length
-        ? context.targetModelIds
+      const fallback = (context.targetModelIds?.length ?? 0) >= 2
+        ? context.targetModelIds ?? []
         : state.candidates.slice(0, 3).map((car) => car.modelId);
       const ids = normalizeIdList(modelIds, fallback);
       if (ids.length < 2) {
@@ -261,6 +262,12 @@ function fallbackAnswer(state: ToolState): string {
   return state.lastSummary || "没有获得足够信息完成这次多步任务。";
 }
 
+function withBookingNotice(context: ToolAgentContext, answer: string): string {
+  return context.bookingRequested
+    ? `${answer}\n\n已完成只读筛选/对比。预约试驾需要你先确认具体车型，我再继续进入人工确认流程。`
+    : answer;
+}
+
 /** 测试可注入 invokeModel；生产环境使用 bindTools 后的 ChatOpenAI */
 export async function runToolCallingLoop(
   context: ToolAgentContext,
@@ -293,6 +300,9 @@ export async function runToolCallingLoop(
       "3. 不要调用预约/写操作；本模式只允许搜索、详情、对比、估价和口碑。",
       "4. 信息足够时直接给出中文结论；需要多步时按需连续调用工具。",
       "5. 回答简洁，覆盖任务中的每个要求，并说明关键依据。",
+      context.bookingRequested
+        ? "6. 用户还表达了预约试驾意图：只完成筛选/对比等只读步骤，最终明确提示用户确认具体车型后再进入预约流程，绝不能声称已预约。"
+        : "",
     ].join("\n")),
     new HumanMessage([
       `用户任务：${context.query}`,
@@ -314,7 +324,7 @@ export async function runToolCallingLoop(
     if (!calls.length) {
       const answer = textFromContent(ai.content).trim() || fallbackAnswer(state);
       return {
-        answer,
+        answer: withBookingNotice(context, answer),
         candidates: state.candidates,
         comparison: state.comparison,
         citations: state.citations,
@@ -354,8 +364,9 @@ export async function runToolCallingLoop(
     }
   }
 
+  const answer = fallbackAnswer(state);
   return {
-    answer: fallbackAnswer(state),
+    answer: withBookingNotice(context, answer),
     candidates: state.candidates,
     comparison: state.comparison,
     citations: state.citations,
@@ -374,13 +385,14 @@ async function runDeterministicPlan(context: ToolAgentContext): Promise<ToolAgen
     return selected ? String(await selected.invoke(args)) : "";
   };
 
-  if (!state.candidates.length) await invoke("search_cars", { limit: 3 });
+  const shouldSearch = !state.candidates.length || /找|推荐|筛选|带娃|车型|预算/.test(context.query);
+  if (shouldSearch) await invoke("search_cars", { limit: 3 });
   if (/对比|比较/.test(context.query) && state.candidates.length >= 2) await invoke("compare_cars", {});
   if (/口碑|评价|缺点|优点/.test(context.query) && state.candidates.length) await invoke("search_reviews", { topic: context.query });
   if (/落地|多少钱|价格/.test(context.query) && state.candidates.length) await invoke("estimate_price", {});
 
   return {
-    answer: fallbackAnswer(state),
+    answer: withBookingNotice(context, fallbackAnswer(state)),
     candidates: state.candidates,
     comparison: state.comparison,
     citations: state.citations,

@@ -64,6 +64,7 @@ const cases: Case[] = [
   { id: "rev-03", category: "口碑", intent: "reviews", tools: ["search_reviews"], steps: ["10万左右，家用，推荐什么车", "这车高速噪音大吗"], expect: { hasCitations: true } },
 
   { id: "res-01", category: "研究", intent: "research", tools: ["search_cars", "compare_cars", "search_reviews"], toolArgs: { search_cars: { budgetMin: 13.5, budgetMax: 16.5, bodyType: ["SUV"], usage: ["家用"] } }, steps: ["帮我找15万左右的家用SUV，再对比前两款，然后看口碑"], expect: { hasCandidates: true, hasComparison: true, hasCitations: true } },
+  { id: "res-02", category: "研究", intent: "research", tools: ["search_cars", "compare_cars"], steps: ["20 万以内 SUV，经常跑长途", "我需要带娃出行，偶尔需要跑长途，帮我找几款车型并且进行对比和预约试驾"], expect: { hasCandidates: true, hasComparison: true, notContains: ["已预约成功"] } },
 
   { id: "bok-01", category: "预约", intent: "book", tools: [], steps: ["15万左右，家用", "预约试驾"], expect: { hasInterrupted: true } },
   {

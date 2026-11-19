@@ -66,6 +66,13 @@ test("候选上下文中的口碑属性问题应识别为 reviews", () => {
 
 test("明确的多步任务才识别为 research", () => {
   assert.equal(isMultiStepResearch("帮我找15万家用SUV，再对比前两款，然后看口碑"), true);
+  assert.equal(isMultiStepResearch("帮我找几款车并且进行对比和预约试驾"), true);
   assert.equal(isMultiStepResearch("对比前两款"), false);
   assert.equal(isMultiStepResearch("15万左右，家用，推荐什么车"), false);
+});
+
+test("带娃长途的混合任务解析为 research，并保留用途约束", () => {
+  const r = parseMessage("我需要带娃出行，偶尔需要跑长途，帮我找几款车型并且进行对比和预约试驾", [], CARS);
+  assert.equal(r.intent, "research");
+  assert.deepEqual(r.constraints.usage, ["家用", "空间", "长途"]);
 });

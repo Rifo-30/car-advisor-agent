@@ -41,6 +41,16 @@ test("高风险写操作即使模型要求 tool_loop 也强制 direct", async ()
   assert.equal(r.mode, "direct");
 });
 
+test("研究加预约的混合请求先走只读 tool_loop，而不是直接预约", async () => {
+  const r = await routeExecutionMode({
+    ...base,
+    text: "帮我找几款车并且进行对比和预约试驾",
+    intent: "research",
+  });
+  assert.equal(r.mode, "tool_loop");
+  assert.equal(r.source, "rule");
+});
+
 test("低置信度或非法模型输出回退规则", async () => {
   const low = await routeExecutionMode(
     { ...base, text: "帮我认真研究一下", intent: "recommend" },

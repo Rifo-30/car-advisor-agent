@@ -35,6 +35,7 @@ export function isMultiStepResearch(text: string): boolean {
     /对比|比较/,
     /口碑|评价|缺点|优点/,
     /落地|报价|多少钱|价格/,
+    /预约|试驾/,
   ].filter((pattern) => pattern.test(text)).length;
   const sequence = /先.*(?:再|然后)|再.*(?:然后|并|同时)|然后|并且|同时|顺便|一起|综合/;
   return taskSignals >= 2 && sequence.test(text);
@@ -174,7 +175,8 @@ function parseBodyType(text: string): string[] | undefined {
 
 function parseUsage(text: string): string[] | undefined {
   const usage: string[] = [];
-  if (/家用|家庭|有娃|接娃|孩子/.test(text)) usage.push("家用");
+  if (/家用|家庭|有娃|接娃|带娃|遛娃|孩子/.test(text)) usage.push("家用");
+  if (/带娃|遛娃/.test(text)) usage.push("空间");
   if (/通勤|上下班|代步/.test(text)) usage.push("通勤");
   if (/长途|自驾|高速/.test(text)) usage.push("长途");
   if (/越野|烂路/.test(text)) usage.push("通过性");
@@ -200,8 +202,8 @@ export function parseMessage(text: string, candidates: Candidate[], cars: CarMod
 
   // 顺序很重要：寒暄 > 预约 > 对比 > 价格 > 口碑 > 推荐
   if (identity.test(text) || greeting.test(text) || thanks.test(text)) intent = "smalltalk";
-  else if (/试驾|预约|到店|看车/.test(text)) intent = "book";
   else if (isMultiStepResearch(text)) intent = "research";
+  else if (/试驾|预约|到店|看车/.test(text)) intent = "book";
   // ⭐ 收紧对比意图：裸"比较"会误伤"比较远/比较贵/比较省油"，改成明确的对比表达
   else if (/对比|差异|区别|哪个好|哪款好|哪个更|比较一下|比较下|比较这|比较那|相比/.test(text)) intent = "compare";
   else if (/落地|多少钱|价格|优惠|报价/.test(text)) intent = "price";

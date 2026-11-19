@@ -505,6 +505,7 @@ async function researchAgentNode(state: State) {
     candidates: state.candidates,
     targetModelId: state.targetModelId,
     targetModelIds: state.targetModelIds,
+    bookingRequested: /预约|试驾/.test(state.messages.at(-1)?.content ?? ""),
   });
 
   return {
