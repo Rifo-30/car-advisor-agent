@@ -4,7 +4,7 @@
 // 用规则解析更稳定、可测试、可解释，避免模型把 15 万说成 20 万。
 // ============================================================
 import { CARS } from "../data/cars";
-import type { Candidate, CarModel, Constraints, EnergyType } from "../types";
+import type { BudgetMode, Candidate, CarModel, Constraints, EnergyType } from "../types";
 
 export type Intent =
   | "smalltalk"
@@ -28,11 +28,13 @@ export interface ParsedMessage {
   weakIntent?: boolean;
 }
 
+const EXPLICIT_COMPARE = /对比|差异|区别|哪个好|哪款好|哪个更|比较一下|比较下|比较这|比较那|相比|哪个.*(?:空间|续航|油耗|动力|大|好|强|省|合适)/;
+
 /** 只有明确的“先做 A 再做 B”多目标任务才进入自主工具循环 */
 export function isMultiStepResearch(text: string): boolean {
   const taskSignals = [
-    /推荐|筛选|找|选车/,
-    /对比|比较/,
+    /推荐|筛选|找|选车|看看|查看/,
+    EXPLICIT_COMPARE,
     /口碑|评价|缺点|优点/,
     /落地|报价|多少钱|价格/,
     /预约|试驾/,
@@ -50,17 +52,33 @@ export function matchModelIds(text: string, cars: CarModel[] = CARS): string[] {
     .map((c) => c.id);
 }
 
-function parseBudget(text: string): { budgetMin?: number; budgetMax?: number } {
+function parseBudget(text: string): { budgetMin?: number; budgetMax?: number; budgetMode?: BudgetMode } {
   // 10-15万 / 10~15万 / 10到15万
   const range = text.match(/(\d+(?:\.\d+)?)\s*[-~到至]\s*(\d+(?:\.\d+)?)\s*万/);
   if (range) {
-    return { budgetMin: Number(range[1]), budgetMax: Number(range[2]) };
+    return { budgetMin: Number(range[1]), budgetMax: Number(range[2]), budgetMode: "range" };
+  }
+  // 20万以内 / 20万以下 / 不超过20万
+  const max = text.match(/(?:不超过|最多|最高|封顶)?\s*(\d+(?:\.\d+)?)\s*万\s*(?:以内|以下|封顶|内)/) ??
+    text.match(/(?:不超过|最多|最高|封顶)\s*(\d+(?:\.\d+)?)\s*万/);
+  if (max) {
+    return { budgetMin: 0, budgetMax: Number(max[1]), budgetMode: "max" };
+  }
+  // 20万以上 / 至少20万
+  const min = text.match(/(?:至少|最低)\s*(\d+(?:\.\d+)?)\s*万/) ??
+    text.match(/(\d+(?:\.\d+)?)\s*万\s*(?:以上|起)/);
+  if (min) {
+    return { budgetMin: Number(min[1]), budgetMode: "min" };
   }
   // 15万左右 / 预算15万
   const single = text.match(/(\d+(?:\.\d+)?)\s*万/);
   if (single) {
     const v = Number(single[1]);
-    return { budgetMin: Math.round(v * 0.9 * 10) / 10, budgetMax: Math.round(v * 1.1 * 10) / 10 };
+    return {
+      budgetMin: Math.round(v * 0.9 * 10) / 10,
+      budgetMax: Math.round(v * 1.1 * 10) / 10,
+      budgetMode: "around",
+    };
   }
   return {};
 }
@@ -205,12 +223,12 @@ export function parseMessage(text: string, candidates: Candidate[], cars: CarMod
   else if (isMultiStepResearch(text)) intent = "research";
   else if (/试驾|预约|到店|看车/.test(text)) intent = "book";
   // ⭐ 收紧对比意图：裸"比较"会误伤"比较远/比较贵/比较省油"，改成明确的对比表达
-  else if (/对比|差异|区别|哪个好|哪款好|哪个更|比较一下|比较下|比较这|比较那|相比/.test(text)) intent = "compare";
+  else if (EXPLICIT_COMPARE.test(text)) intent = "compare";
   else if (/落地|多少钱|价格|优惠|报价/.test(text)) intent = "price";
   else if (
     /口碑|评价|怎么样|缺点|优点|真实|吐槽/.test(text) ||
     // 已有候选时，“这车高速噪音大吗/它空间怎么样”属于口碑追问，不是重新筛车
-    (/噪音|隔音|风噪|胎噪|空间|后排|后备箱|油耗|续航|动力|底盘|舒适|安全|车机|智驾/i.test(text) &&
+    (/噪音|隔音|风噪|胎噪|空间|后排|后备箱|油耗|续航|动力|底盘|舒适|安全|车机|智驾|带娃|孩子|家庭/i.test(text) &&
       (/这车|这款|这辆|那车|那款|那辆|它|该车/.test(text) || candidates.length > 0) &&
       !/推荐|预算|买|选/.test(text))
   ) intent = "reviews";

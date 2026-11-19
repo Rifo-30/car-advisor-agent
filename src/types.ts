@@ -1,5 +1,6 @@
 // 全局类型定义
 export type EnergyType = "燃油" | "混动" | "纯电";
+export type BudgetMode = "around" | "max" | "min" | "range" | "exact";
 
 export interface Variant {
   id: string;
@@ -41,6 +42,7 @@ export interface Review {
 export interface Constraints {
   budgetMin?: number;
   budgetMax?: number;
+  budgetMode?: BudgetMode;
   energy?: EnergyType[];
   seats?: number;
   bodyType?: string[];

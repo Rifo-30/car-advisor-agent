@@ -470,7 +470,7 @@ agent.turn
 
 ```bash
 pnpm typecheck   # tsc --noEmit
-pnpm test        # 82 个单元测试（node:test）
+pnpm test        # 85 个单元测试（node:test）
 pnpm eval        # 29 条端到端评测
 ```
 
@@ -507,7 +507,7 @@ components/
 ```bash
 pnpm typecheck   # TypeScript 类型检查
 pnpm lint        # ESLint（0 errors）
-pnpm test        # 82 个单元测试
+pnpm test        # 85 个单元测试
 pnpm eval        # 29 条端到端评测
 pnpm build       # 生产构建
 ```

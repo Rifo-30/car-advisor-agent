@@ -59,3 +59,14 @@ test("低置信度或非法模型输出回退规则", async () => {
   assert.equal(low.mode, "direct");
   assert.equal(low.source, "fallback");
 });
+
+test("含糊的相对价格请求先要求澄清，不误走口碑", async () => {
+  const r = await routeExecutionMode({
+    ...base,
+    text: "有没有更便宜的",
+    intent: "unknown",
+    candidates: [{ modelId: "yt-x1", brand: "云途", series: "X1" } as any],
+  });
+  assert.equal(r.mode, "clarify");
+  assert.equal(r.source, "rule");
+});

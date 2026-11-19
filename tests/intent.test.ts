@@ -12,6 +12,17 @@ test("解析预算区间", () => {
   assert.equal(r.constraints.charging, true);
 });
 
+test("硬预算上限不会被转换成预算左右", () => {
+  const r = parseMessage("20万以内SUV", [], CARS);
+  assert.equal(r.constraints.budgetMin, 0);
+  assert.equal(r.constraints.budgetMax, 20);
+  assert.equal(r.constraints.budgetMode, "max");
+
+  const around = parseMessage("20万左右SUV", [], CARS);
+  assert.equal(around.constraints.budgetMode, "around");
+  assert.equal(around.constraints.budgetMax, 22);
+});
+
 test("解析能源与车身类型", () => {
   const r = parseMessage("纯电，20万SUV", [], CARS);
   assert.deepEqual(r.constraints.energy, ["纯电"]);
@@ -62,6 +73,8 @@ test("候选上下文中的口碑属性问题应识别为 reviews", () => {
   const candidates = [{ modelId: "yt-x1" }] as unknown as Candidate[];
   assert.equal(parseMessage("这车高速噪音大吗", candidates, CARS).intent, "reviews");
   assert.equal(parseMessage("它空间怎么样", candidates, CARS).intent, "reviews");
+  assert.equal(parseMessage("这车适合带娃吗", candidates, CARS).intent, "reviews");
+  assert.equal(parseMessage("这车和那台哪个空间大", candidates, CARS).intent, "compare");
 });
 
 test("明确的多步任务才识别为 research", () => {

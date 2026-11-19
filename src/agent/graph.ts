@@ -239,7 +239,7 @@ async function classifyNode(state: State) {
 function needMoreInfo(state: State): boolean {
   if (state.budgetDeltaError) return true;
   const c = state.constraints;
-  const noBudget = c.budgetMin == null;
+  const noBudget = c.budgetMin == null && c.budgetMax == null;
   const noContext = !c.usage?.length && !c.energy?.length && !c.bodyType?.length;
   return noBudget || noContext;
 }
@@ -289,7 +289,7 @@ async function clarifyNode(state: State) {
     needs.unshift(`你想把预算${direction} ${Math.abs(state.budgetDelta!)} 万，但我还不知道当前基础预算，请先告诉我现在的预算。`);
   } else {
     if (state.budgetDeltaError) needs.push(state.budgetDeltaError);
-    if (c.budgetMin == null) needs.push("预算大概多少（比如「15 万左右」或「10-15 万」）");
+    if (c.budgetMin == null && c.budgetMax == null) needs.push("预算大概多少（比如「15 万左右」或「10-15 万」）");
   }
   if (!c.usage?.length && !c.energy?.length) needs.push("主要用途（通勤 / 家用 / 长途 / 代步），以及有没有固定充电条件");
 
@@ -304,7 +304,9 @@ async function clarifyNode(state: State) {
 // ---------- 6. 节点：检索候选 ----------
 function describeConstraints(c: Constraints): string {
   const parts: string[] = [];
-  if (c.budgetMin != null && c.budgetMax != null) parts.push(`预算 ${c.budgetMin}~${c.budgetMax} 万`);
+  if (c.budgetMode === "max" && c.budgetMax != null) parts.push(`预算 ${c.budgetMax} 万以内`);
+  else if (c.budgetMode === "min" && c.budgetMin != null) parts.push(`预算 ${c.budgetMin} 万以上`);
+  else if (c.budgetMin != null && c.budgetMax != null) parts.push(`预算 ${c.budgetMin}~${c.budgetMax} 万`);
   if (c.energy?.length) parts.push(`能源 ${c.energy.join("/")}`);
   if (c.seats) parts.push(`${c.seats} 座`);
   if (c.bodyType?.length) parts.push(c.bodyType.join("/"));
@@ -337,6 +339,7 @@ async function retrieveNode(state: State) {
   const res = await searchCars({
     budgetMin: c.budgetMin,
     budgetMax: c.budgetMax,
+    budgetMode: c.budgetMode,
     energy: c.energy,
     seats: c.seats,
     bodyType: c.bodyType,

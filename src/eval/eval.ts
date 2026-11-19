@@ -41,7 +41,7 @@ interface Case {
 
 const cases: Case[] = [
   { id: "rec-01", category: "推荐", intent: "recommend", tools: ["search_cars"], toolArgs: { search_cars: { budgetMin: 13.5, budgetMax: 16.5, usage: ["家用"], charging: true } }, steps: ["15万左右，家用，有充电桩"], expect: { hasCandidates: true, budgetMax: 16.6, hasCitations: true } },
-  { id: "rec-02", category: "推荐", intent: "recommend", tools: ["search_cars"], toolArgs: { search_cars: { budgetMin: 18, budgetMax: 22, bodyType: ["SUV"], usage: ["长途"] } }, steps: ["20万以内SUV，经常跑长途"], expect: { hasCandidates: true, budgetMax: 22.1 } },
+  { id: "rec-02", category: "推荐", intent: "recommend", tools: ["search_cars"], toolArgs: { search_cars: { budgetMin: 0, budgetMax: 20, bodyType: ["SUV"], usage: ["长途"] } }, steps: ["20万以内SUV，经常跑长途"], expect: { hasCandidates: true, budgetMax: 20.1 } },
   { id: "rec-03", category: "推荐", intent: "recommend", tools: ["search_cars"], toolArgs: { search_cars: { budgetMin: 9, budgetMax: 11, bodyType: ["两厢车"], usage: ["通勤"] } }, steps: ["10万左右代步小车"], expect: { hasCandidates: true, budgetMax: 11.1 } },
   { id: "rec-04", category: "推荐", intent: "recommend", tools: ["search_cars"], toolArgs: { search_cars: { energy: ["纯电"], budgetMin: 13.5, budgetMax: 16.5 } }, steps: ["纯电，15万左右，通勤"], expect: { hasCandidates: true, energy: ["纯电"] } },
   { id: "rec-05", category: "推荐", intent: "recommend", tools: ["search_cars"], toolArgs: { search_cars: { seats: 7 } }, steps: ["预算25万，七座，家用"], expect: { hasCandidates: true, minSeats: 7 } },

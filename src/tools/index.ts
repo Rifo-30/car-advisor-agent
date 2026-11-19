@@ -19,6 +19,7 @@ export interface ToolResult<T = unknown> {
 export interface SearchArgs {
   budgetMin?: number;
   budgetMax?: number;
+  budgetMode?: string;
   energy?: EnergyType[];
   seats?: number;
   bodyType?: string[];
@@ -68,8 +69,10 @@ export async function searchCars(args: SearchArgs): Promise<ToolResult<Candidate
     if (args.bodyType?.length && !args.bodyType.includes(car.bodyType)) continue;
 
     // 预算是一个区间：低于下限太多的车（如 15 万预算推荐 7 万微型车）也要排除
+    // “左右”允许向下浮动，但上限仍严格遵守；max/range/min 都是硬边界
+    const minLimit = args.budgetMode === "around" ? min * 0.92 : min;
     const inRange = car.variants
-      .filter((v) => v.guidePrice >= min * 0.92 && v.guidePrice <= max * 1.02)
+      .filter((v) => v.guidePrice >= minLimit && v.guidePrice <= max)
       .sort((a, b) => b.guidePrice - a.guidePrice); // 优先更贴近预算的高配
     if (!inRange.length) continue;
     const variant = inRange[0];

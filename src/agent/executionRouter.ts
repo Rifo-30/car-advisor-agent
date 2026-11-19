@@ -29,6 +29,7 @@ export type ExecutionRouteInvoke = (system: string, human: string) => Promise<st
 
 const HIGH_RISK = /预约|试驾|提交|手机号|确认预约|下单|支付/;
 const RESEARCH_HINT = /研究|综合|分析|值得买|挑一挑|帮我看看|帮我比较|怎么选/;
+const RELATIVE_BUDGET_QUERY = /更便宜|便宜点|再便宜|贵一点|预算.*(?:低|高|增加|减少)|降低预算|提高预算/;
 const TOOL_SIGNALS = [
   /参数|详情|配置/,
   /口碑|评价|缺点|优点/,
@@ -36,17 +37,20 @@ const TOOL_SIGNALS = [
   /对比|比较/,
 ];
 
-function fallback(input: ExecutionRouteInput): ExecutionRouteResult {
+function ruleRoute(input: ExecutionRouteInput): ExecutionRouteResult {
   if (input.intent === "research" || isMultiStepResearch(input.text)) {
     return { mode: "tool_loop", source: "rule", confidence: 1, reason: "命中明确多步任务规则" };
   }
   if (HIGH_RISK.test(input.text)) {
-    return { mode: "direct", source: "fallback", confidence: 1, reason: "高风险或写操作强制走确定性流程" };
+    return { mode: "direct", source: "rule", confidence: 1, reason: "高风险或写操作强制走确定性流程" };
   }
   if (input.intent === "unknown" && !input.candidates.length) {
-    return { mode: "clarify", source: "fallback", confidence: 0.5, reason: "意图不明确且没有候选上下文" };
+    return { mode: "clarify", source: "rule", confidence: 0.5, reason: "意图不明确且没有候选上下文" };
   }
-  return { mode: "direct", source: "fallback", confidence: 0.6, reason: "使用确定性工作流" };
+  if (input.candidates.length && RELATIVE_BUDGET_QUERY.test(input.text)) {
+    return { mode: "clarify", source: "rule", confidence: 0.75, reason: "需要确认预算调整幅度" };
+  }
+  return { mode: "direct", source: "rule", confidence: 0.9, reason: "使用确定性工作流" };
 }
 
 function parseModelRoute(raw: string): { mode: ExecutionMode; confidence: number; reason: string } | null {
@@ -80,7 +84,7 @@ export async function routeExecutionMode(
   input: ExecutionRouteInput,
   options: { invokeModel?: ExecutionRouteInvoke; enabled?: boolean } = {}
 ): Promise<ExecutionRouteResult> {
-  const ruleResult = fallback(input);
+  const ruleResult = ruleRoute(input);
   if (!shouldAskModel(input)) return ruleResult;
 
   const enabled = options.enabled ?? (process.env.EXECUTION_ROUTER_ENABLED !== "false" && Boolean(process.env.OPENAI_API_KEY));
@@ -112,13 +116,13 @@ export async function routeExecutionMode(
       ].join("\n")
     );
     const parsed = parseModelRoute(raw);
-    if (!parsed || parsed.confidence < 0.7) return ruleResult;
+    if (!parsed || parsed.confidence < 0.7) return { ...ruleResult, source: "fallback" };
     if (parsed.mode === "tool_loop" && HIGH_RISK.test(input.text)) {
       return { mode: "direct", source: "model", confidence: parsed.confidence, reason: "写操作策略覆盖模型路由" };
     }
     return { ...parsed, source: "model" };
   } catch (err) {
     console.warn("[router] 执行模式模型判断失败，使用规则回退:", (err as Error).message);
-    return ruleResult;
+    return { ...ruleResult, source: "fallback" };
   }
 }
