@@ -21,6 +21,7 @@ interface Case {
   steps: string[];
   resumes?: string[];
   intent?: string;
+  executionMode?: "direct" | "tool_loop" | "clarify";
   tools?: string[];
   toolArgs?: Record<string, Record<string, unknown>>;
   judge?: boolean;
@@ -65,6 +66,7 @@ const cases: Case[] = [
 
   { id: "res-01", category: "研究", intent: "research", tools: ["search_cars", "compare_cars", "search_reviews"], toolArgs: { search_cars: { budgetMin: 13.5, budgetMax: 16.5, bodyType: ["SUV"], usage: ["家用"] } }, steps: ["帮我找15万左右的家用SUV，再对比前两款，然后看口碑"], expect: { hasCandidates: true, hasComparison: true, hasCitations: true } },
   { id: "res-02", category: "研究", intent: "research", tools: ["search_cars", "compare_cars"], steps: ["20 万以内 SUV，经常跑长途", "我需要带娃出行，偶尔需要跑长途，帮我找几款车型并且进行对比和预约试驾"], expect: { hasCandidates: true, hasComparison: true, notContains: ["已预约成功"] } },
+  { id: "res-03", category: "研究", intent: "recommend", executionMode: "tool_loop", tools: ["search_cars", "compare_cars"], steps: ["我要带娃，跑长途，给我推荐任意价格的车并进行对比", "之后在说 10万以上"], expect: { hasCandidates: true, hasComparison: true } },
 
   { id: "bok-01", category: "预约", intent: "book", tools: [], steps: ["15万左右，家用", "预约试驾"], expect: { hasInterrupted: true } },
   {
@@ -187,7 +189,7 @@ function checkExpect(c: Case, result: TurnResult): string[] {
   if (e.notContains) details.push(e.notContains.every((word) => !result.answer.includes(word)) ? "✓无违禁词" : "✗无违禁词");
   if (c.intent) details.push(result.intent === c.intent ? "✓意图" : `✗意图(${result.intent})`);
   if (c.intent) {
-    const expectedMode = c.intent === "research" ? "tool_loop" : "direct";
+    const expectedMode = c.executionMode ?? (c.intent === "research" ? "tool_loop" : "direct");
     details.push(result.executionMode === expectedMode ? "✓执行模式" : `✗执行模式(${result.executionMode})`);
   }
   if (c.tools) details.push(toolsMatch(c, result) ? "✓工具" : `✗工具(${result.toolEvents.map((event) => event.name).join(",")})`);
@@ -292,7 +294,7 @@ async function main() {
   const toolAccuracy = toolItems.length ? toolItems.filter((item) => item.result && toolsMatch(item.c, item.result)).length / toolItems.length : 0;
   const executionItems = results.filter((item) => item.c.intent != null);
   const executionAccuracy = executionItems.length
-    ? executionItems.filter((item) => item.result?.executionMode === (item.c.intent === "research" ? "tool_loop" : "direct")).length / executionItems.length
+    ? executionItems.filter((item) => item.result?.executionMode === (item.c.executionMode ?? (item.c.intent === "research" ? "tool_loop" : "direct"))).length / executionItems.length
     : 0;
   const argItems = results.filter((item) => item.c.toolArgs != null);
   const argAccuracy = argItems.length ? argItems.filter((item) => item.result && toolArgsMatch(item.c, item.result)).length / argItems.length : 0;

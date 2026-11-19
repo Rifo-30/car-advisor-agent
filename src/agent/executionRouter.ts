@@ -16,6 +16,8 @@ export interface ExecutionRouteInput {
   constraints: Constraints;
   candidates: Candidate[];
   contextSummary?: string;
+  /** 上一轮是否处于持续研究任务 */
+  activeTask?: string;
 }
 
 export interface ExecutionRouteResult {
@@ -30,6 +32,13 @@ export type ExecutionRouteInvoke = (system: string, human: string) => Promise<st
 const HIGH_RISK = /预约|试驾|提交|手机号|确认预约|下单|支付/;
 const RESEARCH_HINT = /研究|综合|分析|值得买|挑一挑|帮我看看|帮我比较|怎么选/;
 const RELATIVE_BUDGET_QUERY = /更便宜|便宜点|再便宜|贵一点|预算.*(?:低|高|增加|减少)|降低预算|提高预算/;
+const CONTINUATION_ACTION = /推荐|找|筛选|对比|比较|看看|查看|多少钱|价格|预约|试驾|研究|分析/;
+
+function isResearchContinuation(input: ExecutionRouteInput): boolean {
+  if (input.activeTask !== "research" || input.intent !== "recommend") return false;
+  const hasConstraint = Object.keys(input.constraints).length > 0;
+  return hasConstraint && !CONTINUATION_ACTION.test(input.text);
+}
 const TOOL_SIGNALS = [
   /参数|详情|配置/,
   /口碑|评价|缺点|优点/,
@@ -40,6 +49,9 @@ const TOOL_SIGNALS = [
 function ruleRoute(input: ExecutionRouteInput): ExecutionRouteResult {
   if (input.intent === "research" || isMultiStepResearch(input.text)) {
     return { mode: "tool_loop", source: "rule", confidence: 1, reason: "命中明确多步任务规则" };
+  }
+  if (isResearchContinuation(input)) {
+    return { mode: "tool_loop", source: "rule", confidence: 0.9, reason: "延续上一轮研究任务并追加约束" };
   }
   if (HIGH_RISK.test(input.text)) {
     return { mode: "direct", source: "rule", confidence: 1, reason: "高风险或写操作强制走确定性流程" };
@@ -70,7 +82,7 @@ function parseModelRoute(raw: string): { mode: ExecutionMode; confidence: number
 
 function shouldAskModel(input: ExecutionRouteInput): boolean {
   if (HIGH_RISK.test(input.text)) return false;
-  if (input.intent === "research" || isMultiStepResearch(input.text)) return false;
+  if (input.intent === "research" || isMultiStepResearch(input.text) || isResearchContinuation(input)) return false;
   if (input.intent === "unknown") return true;
   const toolSignalCount = TOOL_SIGNALS.filter((pattern) => pattern.test(input.text)).length;
   return RESEARCH_HINT.test(input.text) || toolSignalCount >= 2;

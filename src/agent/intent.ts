@@ -39,7 +39,7 @@ export function isMultiStepResearch(text: string): boolean {
     /落地|报价|多少钱|价格/,
     /预约|试驾/,
   ].filter((pattern) => pattern.test(text)).length;
-  const sequence = /先.*(?:再|然后)|再.*(?:然后|并|同时)|然后|并且|同时|顺便|一起|综合/;
+  const sequence = /先.*(?:再|然后)|再.*(?:然后|并|同时)|然后|并且|并|同时|顺便|一起|综合/;
   return taskSignals >= 2 && sequence.test(text);
 }
 
@@ -53,6 +53,9 @@ export function matchModelIds(text: string, cars: CarModel[] = CARS): string[] {
 }
 
 function parseBudget(text: string): { budgetMin?: number; budgetMax?: number; budgetMode?: BudgetMode } {
+  if (/任意价格|不限预算|价格不限|预算不限|随便价格|什么价格都/.test(text)) {
+    return { budgetMode: "any" };
+  }
   // 10-15万 / 10~15万 / 10到15万
   const range = text.match(/(\d+(?:\.\d+)?)\s*[-~到至]\s*(\d+(?:\.\d+)?)\s*万/);
   if (range) {

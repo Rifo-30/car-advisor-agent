@@ -1,6 +1,6 @@
 // 全局类型定义
 export type EnergyType = "燃油" | "混动" | "纯电";
-export type BudgetMode = "around" | "max" | "min" | "range" | "exact";
+export type BudgetMode = "around" | "max" | "min" | "range" | "exact" | "any";
 
 export interface Variant {
   id: string;

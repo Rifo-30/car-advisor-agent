@@ -22,6 +22,7 @@ export interface ToolAgentContext {
   contextSummary?: string;
   history?: ChatMessage[];
   bookingRequested?: boolean;
+  taskGoals?: string[];
 }
 
 export interface ToolAgentResult {
@@ -326,6 +327,7 @@ export async function runToolCallingLoop(
       `目标车型列表：${JSON.stringify(context.targetModelIds ?? [])}`,
       `历史摘要：${context.contextSummary || "无"}`,
       `最近对话：${(context.history ?? []).slice(-6).map((message) => `${message.role === "user" ? "用户" : "助手"}：${message.content}`).join(" | ") || "无"}`,
+      `当前研究目标：${JSON.stringify(context.taskGoals ?? [])}`,
     ].join("\n")),
   ];
 
@@ -407,11 +409,12 @@ async function runDeterministicPlan(context: ToolAgentContext): Promise<ToolAgen
     return selected ? String(await selected.invoke(args)) : "";
   };
 
-  const shouldSearch = !state.candidates.length || /找|推荐|筛选|带娃|车型|预算/.test(context.query);
+  const goals = new Set(context.taskGoals ?? []);
+  const shouldSearch = goals.has("search") || !state.candidates.length || /找|推荐|筛选|带娃|车型|预算/.test(context.query);
   if (shouldSearch) await invoke("search_cars", { limit: 3 });
-  if (/对比|比较/.test(context.query) && state.candidates.length >= 2) await invoke("compare_cars", {});
-  if (/口碑|评价|缺点|优点/.test(context.query) && state.candidates.length) await invoke("search_reviews", { topic: context.query });
-  if (/落地|多少钱|价格/.test(context.query) && state.candidates.length) await invoke("estimate_price", {});
+  if ((goals.has("compare") || /对比|比较/.test(context.query)) && state.candidates.length >= 2) await invoke("compare_cars", {});
+  if ((goals.has("reviews") || /口碑|评价|缺点|优点/.test(context.query)) && state.candidates.length) await invoke("search_reviews", { topic: context.query });
+  if ((goals.has("price") || /落地|多少钱|报价/.test(context.query)) && state.candidates.length) await invoke("estimate_price", {});
 
   return {
     answer: withBookingNotice(context, fallbackAnswer(state)),

@@ -65,7 +65,7 @@ pnpm eval:live   # 加载 .env，使用真实模型与 LLM-as-judge
 # 可选：EVAL_CASE_FILTER=rec-01,rev-03,res-01 pnpm eval:live
 ```
 
-当前基线：**29/29 = 100%**，覆盖：
+当前基线：**30/30 = 100%**，覆盖：
 
 | 类别 | 用例数 | 校验点 |
 | --- | --- | --- |
@@ -74,7 +74,7 @@ pnpm eval:live   # 加载 .env，使用真实模型与 LLM-as-judge
 | 对比 | 2 | 生成结构化对比 |
 | 报价 | 2 | 落地价计算 + 免责声明 |
 | 口碑 | 3 | RAG 检索、query 改写、引用 |
-| 研究 | 2 | Tool Calling 多步任务、研究+预约安全分流 |
+| 研究 | 3 | Tool Calling 多步任务、研究+预约安全分流、研究任务延续 |
 | 预约 | 2 | interrupt 暂停 → resume → 提交成功 |
 | 安全 | 4 | 注入检测、广告法替换、输入长度限制 |
 | 闲聊 | 3 | 自我介绍、寒暄不应误澄清 |
@@ -144,7 +144,7 @@ src/
   cache/redis.ts           Redis 缓存 + 内存降级
   observability/trace.ts   Langfuse + 本地 trace
   guardrails/guard.ts      ⭐ 广告法 / PII / 注入检测
-  eval/eval.ts             ⭐ 29 条评测用例
+  eval/eval.ts             ⭐ 30 条评测用例
 ```
 
 ---
@@ -318,14 +318,14 @@ const phoneReply = interrupt({ type: "phone", question: "请提供手机号" });
 1. **全链路**：Next.js 前端 → API → LangGraph 编排 → 工具 → RAG → 数据层 → 可观测。
 2. **可解释推荐**：每款车给出"为什么推荐 + 短板"，且可追溯到结构化字段。
 3. **真实 HITL**：`interrupt()` + Checkpointer 实现"确认 → 手机号 → 提交"的暂停恢复。
-4. **工程化**：29 条评测集（100% 通过）、trace、SSE、注入/广告法护栏。
+4. **工程化**：30 条评测集（100% 通过）、trace、SSE、注入/广告法护栏。
 5. **可降级**：无 Key、无数据库都能跑，适合演示与面试现场。
 
 ### 面试讲法（60 秒版）
 
 > 我做了一个汽车垂类的选车决策 Agent。核心判断是：**LLM 不能作为事实来源**。所以车型参数和价格全部走结构化数据，LLM 只负责理解需求和表达。
 > 编排用 LangGraph，把"澄清→筛选→推荐→对比→报价→预约"做成状态机；预约环节用 `interrupt()` 实现人工确认，`Command(resume)` 从 checkpoint 恢复。
-> 工程上配了 29 条评测集做回归，接了 trace 看每一步工具调用，并做了广告法、注入、PII 三层护栏。
+> 工程上配了 30 条评测集做回归，接了 trace 看每一步工具调用，并做了广告法、注入、PII 三层护栏。
 > 外部依赖全部可降级：没有 Key 也能完整演示。
 
 ---
@@ -470,8 +470,8 @@ agent.turn
 
 ```bash
 pnpm typecheck   # tsc --noEmit
-pnpm test        # 86 个单元测试（node:test）
-pnpm eval        # 29 条端到端评测
+pnpm test        # 87 个单元测试（node:test）
+pnpm eval        # 30 条端到端评测
 ```
 
 ### Trace 持久化
@@ -507,8 +507,8 @@ components/
 ```bash
 pnpm typecheck   # TypeScript 类型检查
 pnpm lint        # ESLint（0 errors）
-pnpm test        # 86 个单元测试
-pnpm eval        # 29 条端到端评测
+pnpm test        # 87 个单元测试
+pnpm eval        # 30 条端到端评测
 pnpm build       # 生产构建
 ```
 

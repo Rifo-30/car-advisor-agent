@@ -64,6 +64,8 @@ const AdvisorState = Annotation.Root({
   intentSource: Annotation<string>({ reducer: (_a, b) => b, default: () => "rule" }),
   stage: Annotation<Stage>({ reducer: (_a, b) => b, default: () => "clarify" }),
   routingStage: Annotation<string>({ reducer: (_a, b) => b, default: () => "idle" }),
+  activeTask: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }),
+  activeTaskGoals: Annotation<string[]>({ reducer: (_a, b) => b, default: () => [] }),
   candidates: Annotation<Candidate[]>({ reducer: (_a, b) => b, default: () => [] }),
   targetModelId: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }),
   targetModelIds: Annotation<string[]>({ reducer: (_a, b) => b, default: () => [] }),
@@ -205,6 +207,7 @@ async function classifyNode(state: State) {
     constraints: nextConstraints,
     candidates: state.candidates,
     contextSummary: state.contextSummary,
+    activeTask: state.activeTask,
   });
   appendSpan(
     state.traceId,
@@ -231,6 +234,7 @@ async function classifyNode(state: State) {
     retrievalQuery,
     executionMode: executionRoute.mode,
     executionRouteSource: executionRoute.source,
+    activeTask: executionRoute.mode === "tool_loop" ? "research" : state.activeTask,
     intentSource,
     routingStage: "classifying",
   };
@@ -240,7 +244,7 @@ async function classifyNode(state: State) {
 function needMoreInfo(state: State): boolean {
   if (state.budgetDeltaError) return true;
   const c = state.constraints;
-  const noBudget = c.budgetMin == null && c.budgetMax == null;
+  const noBudget = c.budgetMode !== "any" && c.budgetMin == null && c.budgetMax == null;
   const noContext = !c.usage?.length && !c.energy?.length && !c.bodyType?.length;
   return noBudget || noContext;
 }
@@ -290,7 +294,7 @@ async function clarifyNode(state: State) {
     needs.unshift(`你想把预算${direction} ${Math.abs(state.budgetDelta!)} 万，但我还不知道当前基础预算，请先告诉我现在的预算。`);
   } else {
     if (state.budgetDeltaError) needs.push(state.budgetDeltaError);
-    if (c.budgetMin == null && c.budgetMax == null) needs.push("预算大概多少（比如「15 万左右」或「10-15 万」）");
+    if (c.budgetMode !== "any" && c.budgetMin == null && c.budgetMax == null) needs.push("预算大概多少（比如「15 万左右」或「10-15 万」）");
   }
   if (!c.usage?.length && !c.energy?.length) needs.push("主要用途（通勤 / 家用 / 长途 / 代步），以及有没有固定充电条件");
 
@@ -305,7 +309,8 @@ async function clarifyNode(state: State) {
 // ---------- 6. 节点：检索候选 ----------
 function describeConstraints(c: Constraints): string {
   const parts: string[] = [];
-  if (c.budgetMode === "max" && c.budgetMax != null) parts.push(`预算 ${c.budgetMax} 万以内`);
+  if (c.budgetMode === "any") parts.push("不限预算");
+  else if (c.budgetMode === "max" && c.budgetMax != null) parts.push(`预算 ${c.budgetMax} 万以内`);
   else if (c.budgetMode === "min" && c.budgetMin != null) parts.push(`预算 ${c.budgetMin} 万以上`);
   else if (c.budgetMin != null && c.budgetMax != null) parts.push(`预算 ${c.budgetMin}~${c.budgetMax} 万`);
   if (c.energy?.length) parts.push(`能源 ${c.energy.join("/")}`);
@@ -500,8 +505,16 @@ async function reviewsNode(state: State) {
 
 // ---------- 9.5 节点：受控 Tool Calling 研究循环 ----------
 async function researchAgentNode(state: State) {
+  const query = state.messages.at(-1)?.content ?? "";
+  const inferredGoals: string[] = [];
+  if (/推荐|找|筛选|选车|看看|查看|万|预算/.test(query)) inferredGoals.push("search");
+  if (/对比|比较/.test(query)) inferredGoals.push("compare");
+  if (/口碑|评价|缺点|优点/.test(query)) inferredGoals.push("reviews");
+  if (/落地|多少钱|报价/.test(query)) inferredGoals.push("price");
+  if (/预约|试驾/.test(query)) inferredGoals.push("booking");
+  const taskGoals = [...new Set([...state.activeTaskGoals, ...inferredGoals])];
   const result = await runResearchAgent({
-    query: state.messages.at(-1)?.content ?? "",
+    query,
     contextSummary: state.contextSummary,
     history: contextHistory(state),
     turnId: state.turnId,
@@ -509,7 +522,8 @@ async function researchAgentNode(state: State) {
     candidates: state.candidates,
     targetModelId: state.targetModelId,
     targetModelIds: state.targetModelIds,
-    bookingRequested: /预约|试驾/.test(state.messages.at(-1)?.content ?? ""),
+    bookingRequested: /预约|试驾/.test(query),
+    taskGoals,
   });
 
   return {
@@ -519,6 +533,7 @@ async function researchAgentNode(state: State) {
     citations: result.citations,
     toolEvents: result.toolEvents,
     agentSteps: result.steps,
+    activeTaskGoals: taskGoals,
     stage: "recommend" as Stage,
   };
 }

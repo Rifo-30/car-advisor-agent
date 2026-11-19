@@ -40,3 +40,37 @@ test("带娃研究加预约不会直接拿旧候选进入预约", async () => {
     else process.env.TOOL_AGENT_ENABLED = previousTool;
   }
 });
+
+test("不限预算研究任务会延续到后续预算约束", async () => {
+  const previousKey = process.env.OPENAI_API_KEY;
+  const previousIntent = process.env.INTENT_MODEL_ENABLED;
+  const previousTool = process.env.TOOL_AGENT_ENABLED;
+  process.env.OPENAI_API_KEY = "";
+  process.env.INTENT_MODEL_ENABLED = "false";
+  process.env.TOOL_AGENT_ENABLED = "false";
+
+  try {
+    const sessionId = `dialogue-continuation-${randomUUID()}`;
+    const first = await runAdvisorTurn({
+      sessionId,
+      message: "我要带娃，跑长途，给我推荐任意价格的车并进行对比",
+    });
+    assert.equal(first.executionMode, "tool_loop");
+    assert.ok(first.comparison);
+
+    const second = await runAdvisorTurn({ sessionId, message: "之后在说 10万以上" });
+    assert.equal(second.executionMode, "tool_loop");
+    assert.ok(second.comparison);
+    assert.ok(second.toolEvents.some((event) => event.name === "search_cars"));
+    assert.ok(second.toolEvents.some((event) => event.name === "compare_cars"));
+  } finally {
+    for (const [name, value] of [
+      ["OPENAI_API_KEY", previousKey],
+      ["INTENT_MODEL_ENABLED", previousIntent],
+      ["TOOL_AGENT_ENABLED", previousTool],
+    ] as const) {
+      if (value == null) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+});
