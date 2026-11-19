@@ -38,6 +38,7 @@ export interface ToolAgentResult {
 interface ToolState {
   turnId: string;
   candidates: Candidate[];
+  knownCandidates: Map<string, Candidate>;
   comparisonCandidates: Candidate[];
   comparison: Comparison | null;
   citations: Citation[];
@@ -114,6 +115,7 @@ export function createReadOnlyTools(context: ToolAgentContext, state: ToolState)
       };
       const res = await searchCars(merged);
       const candidates = res.data ?? [];
+      for (const candidate of candidates) state.knownCandidates.set(candidate.modelId, candidate);
       state.candidates = candidates;
       state.lastSummary = res.summary;
       toolEvent(state, "search_cars", merged, started, res.ok, res.summary);
@@ -177,7 +179,9 @@ export function createReadOnlyTools(context: ToolAgentContext, state: ToolState)
       }
       const res = await compareCars(ids);
       state.comparison = res.data ?? null;
-      state.comparisonCandidates = state.candidates.filter((car) => ids.includes(car.modelId));
+      state.comparisonCandidates = ids
+        .map((id) => state.knownCandidates.get(id))
+        .filter((car): car is Candidate => Boolean(car));
       state.lastSummary = res.summary;
       toolEvent(state, "compare_cars", { modelIds: ids }, started, res.ok, res.summary);
       return compact({ ok: res.ok, summary: res.summary, comparison: res.data ?? null });
@@ -283,6 +287,7 @@ export async function runToolCallingLoop(
   const state: ToolState = {
     turnId: context.turnId,
     candidates: context.candidates,
+    knownCandidates: new Map(context.candidates.map((car) => [car.modelId, car])),
     comparisonCandidates: [],
     comparison: null,
     citations: [],
@@ -397,6 +402,7 @@ async function runDeterministicPlan(context: ToolAgentContext): Promise<ToolAgen
   const state: ToolState = {
     turnId: context.turnId,
     candidates: context.candidates,
+    knownCandidates: new Map(context.candidates.map((car) => [car.modelId, car])),
     comparisonCandidates: [],
     comparison: null,
     citations: [],
