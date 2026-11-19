@@ -14,7 +14,7 @@ function context(): ToolAgentContext {
 }
 
 test("Tool Calling 只暴露只读工具，不暴露预约写操作", () => {
-  const state = { turnId: "t", candidates: [], comparison: null, citations: [], toolEvents: [], lastSummary: "" };
+  const state = { turnId: "t", candidates: [], comparisonCandidates: [], comparison: null, citations: [], toolEvents: [], lastSummary: "" };
   const names = createReadOnlyTools(context(), state).map((item) => item.name);
   assert.deepEqual(names.sort(), ["compare_cars", "estimate_price", "get_car_detail", "search_cars", "search_reviews"].sort());
   assert.equal(names.includes("create_test_drive_lead"), false);

@@ -37,6 +37,7 @@ export interface ToolAgentResult {
 interface ToolState {
   turnId: string;
   candidates: Candidate[];
+  comparisonCandidates: Candidate[];
   comparison: Comparison | null;
   citations: Citation[];
   toolEvents: ToolEvent[];
@@ -175,6 +176,7 @@ export function createReadOnlyTools(context: ToolAgentContext, state: ToolState)
       }
       const res = await compareCars(ids);
       state.comparison = res.data ?? null;
+      state.comparisonCandidates = state.candidates.filter((car) => ids.includes(car.modelId));
       state.lastSummary = res.summary;
       toolEvent(state, "compare_cars", { modelIds: ids }, started, res.ok, res.summary);
       return compact({ ok: res.ok, summary: res.summary, comparison: res.data ?? null });
@@ -262,6 +264,10 @@ function fallbackAnswer(state: ToolState): string {
   return state.lastSummary || "没有获得足够信息完成这次多步任务。";
 }
 
+function displayCandidates(state: ToolState): Candidate[] {
+  return state.comparisonCandidates.length ? state.comparisonCandidates : state.candidates;
+}
+
 function withBookingNotice(context: ToolAgentContext, answer: string): string {
   return context.bookingRequested
     ? `${answer}\n\n已完成只读筛选/对比。预约试驾需要你先确认具体车型，我再继续进入人工确认流程。`
@@ -273,7 +279,15 @@ export async function runToolCallingLoop(
   context: ToolAgentContext,
   options: { invokeModel?: ToolCallingInvoke; maxSteps?: number } = {}
 ): Promise<ToolAgentResult> {
-  const state: ToolState = { turnId: context.turnId, candidates: context.candidates, comparison: null, citations: [], toolEvents: [], lastSummary: "" };
+  const state: ToolState = {
+    turnId: context.turnId,
+    candidates: context.candidates,
+    comparisonCandidates: [],
+    comparison: null,
+    citations: [],
+    toolEvents: [],
+    lastSummary: "",
+  };
   const tools = createReadOnlyTools(context, state);
   const toolMap = new Map(tools.map((item) => [item.name, item]));
   const maxSteps = options.maxSteps ?? 6;
@@ -325,7 +339,7 @@ export async function runToolCallingLoop(
       const answer = textFromContent(ai.content).trim() || fallbackAnswer(state);
       return {
         answer: withBookingNotice(context, answer),
-        candidates: state.candidates,
+        candidates: displayCandidates(state),
         comparison: state.comparison,
         citations: state.citations,
         toolEvents: state.toolEvents,
@@ -367,7 +381,7 @@ export async function runToolCallingLoop(
   const answer = fallbackAnswer(state);
   return {
     answer: withBookingNotice(context, answer),
-    candidates: state.candidates,
+    candidates: displayCandidates(state),
     comparison: state.comparison,
     citations: state.citations,
     toolEvents: state.toolEvents,
@@ -378,7 +392,15 @@ export async function runToolCallingLoop(
 
 /** 无模型时的确定性降级：按任务关键词执行一条安全的多工具计划 */
 async function runDeterministicPlan(context: ToolAgentContext): Promise<ToolAgentResult> {
-  const state: ToolState = { turnId: context.turnId, candidates: context.candidates, comparison: null, citations: [], toolEvents: [], lastSummary: "" };
+  const state: ToolState = {
+    turnId: context.turnId,
+    candidates: context.candidates,
+    comparisonCandidates: [],
+    comparison: null,
+    citations: [],
+    toolEvents: [],
+    lastSummary: "",
+  };
   const tools = createReadOnlyTools(context, state);
   const invoke = async (name: string, args: Record<string, unknown> = {}) => {
     const selected = tools.find((item) => item.name === name);
@@ -393,7 +415,7 @@ async function runDeterministicPlan(context: ToolAgentContext): Promise<ToolAgen
 
   return {
     answer: withBookingNotice(context, fallbackAnswer(state)),
-    candidates: state.candidates,
+    candidates: displayCandidates(state),
     comparison: state.comparison,
     citations: state.citations,
     toolEvents: state.toolEvents,
